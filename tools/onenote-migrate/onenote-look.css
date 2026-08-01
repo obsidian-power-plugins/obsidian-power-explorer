@@ -1,0 +1,49 @@
+/* ============================================================
+   OneNote-ish look for Obsidian
+   Save in: <vault>\.obsidian\snippets\onenote-look.css
+   Enable:  Settings -> Appearance -> CSS snippets (toggle on)
+   Tuned for LIGHT mode. Colors are approximations of OneNote's
+   defaults - tweak the hex values to taste.
+   ============================================================ */
+
+/* --- Spacing closer to OneNote (slightly tighter) --- */
+body {
+  --line-height-normal: 1.35;
+  --p-spacing: 0.4em;      /* space between paragraphs */
+  --list-spacing: 0.05em;  /* space between list items */
+}
+
+/* --- Tables: light gray borders like OneNote --- */
+.markdown-rendered table,
+.markdown-source-view.mod-cm6 table {
+  border-collapse: collapse;
+}
+
+.markdown-rendered th,
+.markdown-rendered td,
+.markdown-source-view.mod-cm6 th,
+.markdown-source-view.mod-cm6 td {
+  border: 1px solid #bfbfbf;
+  padding: 4px 10px;
+}
+
+/* --- Table header row: OneNote's blue-gray fill --- */
+.markdown-rendered th,
+.markdown-source-view.mod-cm6 th {
+  background-color: #deeaf6; /* approx. OneNote header blue */
+  font-weight: 600;
+  text-align: left;
+}
+
+/* --- Bullets: solid and dark like OneNote, not faint --- */
+.markdown-rendered ul > li::marker,
+.markdown-source-view.mod-cm6 .list-bullet {
+  color: var(--text-normal);
+}
+
+/* --- Optional: set the font here instead of Settings.
+       Uncomment if you prefer it travel with the snippet. ---
+body {
+  --font-text: Calibri, "Segoe UI", sans-serif;
+}
+*/

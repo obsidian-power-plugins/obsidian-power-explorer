@@ -1,0 +1,30 @@
+{
+	"name": "powerexplorer",
+	"version": "1.35.4",
+	"description": "Obsidian plugin: arrange files and folders by hand with drag-and-drop, and search the whole vault instantly by word prefix",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"test": "esbuild tests.ts --bundle --format=cjs --outfile=tests.cjs && node tests.cjs",
+		"deploy": "npm run build && node deploy.mjs"
+	},
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"file-explorer",
+		"sorting"
+	],
+	"author": "Power Plugins",
+	"license": "MIT",
+	"devDependencies": {
+		"@codemirror/state": "^6.5.0",
+		"@codemirror/view": "^6.38.6",
+		"@types/node": "^26.1.1",
+		"esbuild": "^0.24.0",
+		"obsidian": "latest",
+		"tslib": "^2.6.2",
+		"typescript": "^5.4.5"
+	}
+}
