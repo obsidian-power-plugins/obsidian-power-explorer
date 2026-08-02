@@ -436,7 +436,6 @@ export default class PowerExplorerPlugin extends Plugin {
 	private showHidden = false;
 	private origSort = new WeakMap<object, (folder: TFolder) => { file?: TAbstractFile }[]>();
 	private refreshTimer: number | null = null;
-	private externalReloadTimer: number | null = null;
 	/** One generated stylesheet paints every section color: zero per-item work. */
 	private colorSheet: CSSStyleSheet | null = null;
 	/** Pages pane interaction state; reset when the section changes. */
@@ -530,7 +529,6 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.register(() => this.restoreNavbar());
 		this.register(() => this.restoreDrawerMenu());
 		this.register(() => this.clearDrawerMenuItems());
-		this.watchDataFile();
 
 		this.search = new SearchService(this);
 		this.app.workspace.onLayoutReady(() => {
@@ -1160,40 +1158,13 @@ export default class PowerExplorerPlugin extends Plugin {
 	/**
 	 * Obsidian calls this when data.json changes underneath us, which is what
 	 * Sync landing another device's write looks like. It is the only such signal
-	 * mobile gets (watchDataFile needs an fs watcher, so a phone never adopted
-	 * anything and held its load-time snapshot for as long as it ran).
+	 * gets. A desktop-only fs.watch on data.json used to sit alongside this,
+	 * doing the same job through the Node filesystem API; the hook covers the
+	 * external-program case it existed for, and its cost was a listing that
+	 * warned users the plugin could read and write any file on the system.
 	 */
 	async onExternalSettingsChange() {
 		await this.adoptExternalData();
-	}
-
-	/**
-	 * Adopt external edits to data.json (order-sync scripts, settings sync
-	 * tools) instead of clobbering them with the next save of stale memory.
-	 * Desktop only, mobile has no fs watcher and relies on the hook above.
-	 */
-	private watchDataFile() {
-		// Ask for node before checking the platform and a phone logs the refusal as
-		// an error, which is alarming and says nothing: mobile is meant to be here,
-		// and onExternalSettingsChange already covers it.
-		if (!Platform.isDesktopApp) return;
-		const basePath = (this.app.vault.adapter as unknown as { basePath?: string }).basePath;
-		if (!basePath) return;
-		try {
-			const fs = require("node:fs") as typeof import("node:fs");
-			const dir = [basePath, this.app.vault.configDir, "plugins", this.manifest.id].join("/");
-			const watcher = fs.watch(dir, (_evt, name) => {
-				if (name && name.toString() !== "data.json") return;
-				if (this.externalReloadTimer != null) window.clearTimeout(this.externalReloadTimer);
-				this.externalReloadTimer = window.setTimeout(() => {
-					this.externalReloadTimer = null;
-					void this.adoptExternalData();
-				}, 300);
-			});
-			this.register(() => watcher.close());
-		} catch {
-			/* watcher unavailable, trust memory, as before */
-		}
 	}
 
 	private async adoptExternalData() {
