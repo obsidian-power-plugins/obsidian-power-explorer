@@ -2,6 +2,14 @@
 
 Drag-and-drop manual ordering for Obsidian's file explorer, built to stay fast in huge vaults. Arrange folders and notes in exactly the order you want, and the order sticks.
 
+![The notebook tree on the left with colored notebooks, a section pane in the middle listing its pages, and a page group expanded to show two indented subpages](docs/images/power-explorer.png)
+
+Notebooks on the left go exactly one folder deep, and clicking a section lists
+its pages beside it. **Bramble bed** is a page group: a folder and a note of the
+same name, drawn as one row with its subpages folded underneath a chevron
+rather than as a folder sitting next to a duplicate note. Recent Pages is
+pinned above the tree.
+
 ## Why another sorting plugin
 
 The existing manual-sort plugins work by fighting the file explorer's DOM: drag libraries attached per folder, mutation observers watching the whole tree, and full re-sorts on every vault event. That approach falls over somewhere north of 10,000 notes. Power Explorer was built for 20,000+ note vaults and takes the opposite approach:
