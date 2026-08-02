@@ -27,6 +27,18 @@
 	display: none;
 }
 
+/* Visibility is a class so the drag code never assigns a static style. Its
+   position is still set inline, because left/width/top are computed per drop
+   target and cannot live in a stylesheet. */
+.pe-line-on {
+	display: block;
+}
+
+/* Modal text inputs fill their row. */
+.pe-modal-input {
+	width: 100%;
+}
+
 .pe-line::before {
 	content: "";
 	position: absolute;

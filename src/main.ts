@@ -4812,7 +4812,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		d.before = null;
 		d.intoFolder = null;
 		d.intoPage = null;
-		d.line!.style.display = "none";
+		d.line!.removeClass("pe-line-on");
 		if (d.intoEl) {
 			d.intoEl.removeClass("pe-into");
 			d.intoEl = null;
@@ -4847,7 +4847,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			d.before = null;
 			const lr = last.getBoundingClientRect();
 			const s = d.line!.style;
-			s.display = "block";
+			d.line!.addClass("pe-line-on");
 			s.left = lr.left + "px";
 			s.width = lr.width + "px";
 			s.top = lr.bottom - 1 + "px";
@@ -4884,7 +4884,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		d.before = before ? overFile.name : seq[idx + 1] ?? null;
 		const y = before ? rect.top : rect.bottom;
 		const s = d.line!.style;
-		s.display = "block";
+		d.line!.addClass("pe-line-on");
 		s.left = rect.left + "px";
 		s.width = rect.width + "px";
 		s.top = y - 1 + "px";
@@ -4931,7 +4931,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		d.dropParent = parent;
 		d.before = before ? overFile.name : (seq[idx + 1] ?? null);
 		const s = d.line!.style;
-		s.display = "block";
+		d.line!.addClass("pe-line-on");
 		s.left = rect.left + "px";
 		s.width = rect.width + "px";
 		s.top = (before ? rect.top : rect.bottom) - 1 + "px";
@@ -4958,7 +4958,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		d.before = null;
 		const lr = last.getBoundingClientRect();
 		const s = d.line!.style;
-		s.display = "block";
+		d.line!.addClass("pe-line-on");
 		s.left = lr.left + "px";
 		s.width = lr.width + "px";
 		s.top = lr.bottom - 1 + "px";
@@ -4979,7 +4979,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		const row = el.closest(".pe-page[data-path]") as HTMLElement | null;
 		const showLine = (rect: DOMRect, atTop: boolean) => {
 			const s = d.line!.style;
-			s.display = "block";
+			d.line!.addClass("pe-line-on");
 			s.left = rect.left + "px";
 			s.width = rect.width + "px";
 			s.top = (atTop ? rect.top : rect.bottom) - 1 + "px";
@@ -6310,7 +6310,7 @@ class FolderNameModal extends Modal {
 		this.titleEl.setText(this.opts.title);
 		const input = this.contentEl.createEl("input", { attr: { type: "text", spellcheck: "false" } });
 		input.value = this.opts.value;
-		input.style.width = "100%";
+		input.addClass("pe-modal-input");
 		const btns = this.contentEl.createDiv({ cls: "pe-modal-btns" });
 		btns.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 		const save = btns.createEl("button", { text: this.opts.cta, cls: "mod-cta" });
@@ -6948,7 +6948,7 @@ class TemplatePromptModal extends Modal {
 			attr: { type: "text", spellcheck: "false", placeholder: "Templates/Meeting.md", list: listId },
 		});
 		input.value = this.current ?? "";
-		input.style.width = "100%";
+		input.addClass("pe-modal-input");
 		const btns = this.contentEl.createDiv({ cls: "pe-modal-btns" });
 		btns.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 		const save = btns.createEl("button", { text: "Save", cls: "mod-cta" });
