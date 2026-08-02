@@ -1467,7 +1467,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		if (!(list instanceof HTMLElement)) return;
 		const hidden = new Set(this.settings.drawerMenuHidden);
 		for (const el of Array.from(list.querySelectorAll(":scope > .workspace-tab-header:not(.pe-drawer-cmd)"))) {
-			if (el instanceof HTMLElement) el.toggleClass("pe-drawer-hidden", hidden.has(el.dataset.type ?? ""));
+			if (el.instanceOf(HTMLElement)) el.toggleClass("pe-drawer-hidden", hidden.has(el.dataset.type ?? ""));
 		}
 		list.querySelectorAll(":scope > .pe-drawer-cmd").forEach((n) => n.remove());
 		const reg = (this.app as unknown as { commands: CommandRegistry }).commands;
@@ -1571,7 +1571,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		document.body.toggleClass("pe-own-new-folder", this.settings.sectionsLayout);
 		for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
 			const el = (leaf.view as { containerEl?: HTMLElement } | undefined)?.containerEl;
-			const bar = el?.querySelector(".nav-buttons-container") as HTMLElement | null;
+			const bar = el?.querySelector<HTMLElement>(".nav-buttons-container");
 			if (!bar) continue;
 			this.syncBarActions(bar);
 			this.syncFolderBtn(bar);
@@ -1648,7 +1648,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		const seen = new Set<string>();
 		for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
 			const el = (leaf.view as { containerEl?: HTMLElement } | undefined)?.containerEl;
-			const bar = el?.querySelector(".nav-buttons-container") as HTMLElement | null;
+			const bar = el?.querySelector<HTMLElement>(".nav-buttons-container");
 			if (!bar) continue;
 			// The sections layout replaces the app's New folder with ours and hides
 			// the original in CSS. Listing it anyway offered a switch that was
@@ -2031,10 +2031,10 @@ export default class PowerExplorerPlugin extends Plugin {
 			this.setSection(sec.path);
 		}
 		this.selectPage(f.path);
-		const find = () => this.pagesEl!.querySelector(`.pe-page[data-path="${CSS.escape(f.path)}"]`) as HTMLElement | null;
+		const find = () => this.pagesEl!.querySelector<HTMLElement>(`.pe-page[data-path="${CSS.escape(f.path)}"]`);
 		let row = find();
 		// big sections render in chunks; pull more until the row exists
-		const more = this.pagesEl.querySelector(".pe-pages-more") as HTMLElement | null;
+		const more = this.pagesEl.querySelector<HTMLElement>(".pe-pages-more");
 		for (let i = 0; !row && more && more.style.display !== "none" && i < 200; i++) {
 			more.click();
 			row = find();
@@ -2663,8 +2663,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		const explorer = this.app.workspace.getLeavesOfType("file-explorer")[0]?.view as ExplorerView | undefined;
 		const root = this.app.vault.getRoot();
 		const t0 = performance.now();
-		const rootItems =
-			explorer && typeof explorer.getSortedFolderItems === "function" ? explorer.getSortedFolderItems(root).length : -1;
+		if (explorer && typeof explorer.getSortedFolderItems === "function") explorer.getSortedFolderItems(root);
 		const t1 = performance.now();
 		const section = this.sectionFolder();
 		const entryCount = this.sectionEntries(section).length;
@@ -3096,7 +3095,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/** Render the pages pane; on phones, the drill navigator around it. */
 	private renderPages() {
-		const inner = this.pagesEl?.querySelector(".pe-pages-inner") as HTMLElement | null;
+		const inner = this.pagesEl?.querySelector<HTMLElement>(".pe-pages-inner");
 		if (!inner) return;
 		inner.empty();
 		this.pagesScrollHandler = null;
@@ -3648,10 +3647,8 @@ export default class PowerExplorerPlugin extends Plugin {
 			group.name,
 			() => {
 				void (async () => {
-					const fm = this.app.fileManager as unknown as { trashFile?: (file: TAbstractFile) => Promise<void> };
 					const bin = async (t: TAbstractFile) => {
-						if (fm.trashFile) await fm.trashFile(t);
-						else await this.app.vault.trash(t, true);
+						await this.app.fileManager.trashFile(t);
 					};
 					await bin(group);
 					if (beside && this.app.vault.getAbstractFileByPath(note.path)) await bin(note);
@@ -3667,13 +3664,11 @@ export default class PowerExplorerPlugin extends Plugin {
 	private deletePage(f: TAbstractFile) {
 		new ConfirmDeleteModal(this.app, f.name, () => {
 			void (async () => {
-				const rows = Array.from(this.pagesEl?.querySelectorAll(".pe-page") ?? []) as HTMLElement[];
+				const rows = Array.from(this.pagesEl?.querySelectorAll<HTMLElement>(".pe-page") ?? []);
 				const idx = rows.findIndex((r) => r.getAttribute("data-path") === f.path);
 				const neighbor = idx >= 0 ? ((rows[idx - 1] ?? rows[idx + 1])?.getAttribute("data-path") ?? null) : null;
 				const wasActive = this.app.workspace.getActiveFile()?.path === f.path;
-				const fm = this.app.fileManager as unknown as { trashFile?: (file: TAbstractFile) => Promise<void> };
-				if (fm.trashFile) await fm.trashFile(f);
-				else await this.app.vault.trash(f, true);
+				await this.app.fileManager.trashFile(f);
 				if (!neighbor) return;
 				const nf = this.app.vault.getAbstractFileByPath(neighbor);
 				if (!(nf instanceof TFile)) return;
@@ -3719,9 +3714,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			folder.name,
 			() => {
 				void (async () => {
-					const fm = this.app.fileManager as unknown as { trashFile?: (file: TAbstractFile) => Promise<void> };
-					if (fm.trashFile) await fm.trashFile(folder);
-					else await this.app.vault.trash(folder, true);
+					await this.app.fileManager.trashFile(folder);
 				})();
 			},
 			detail
@@ -4181,7 +4174,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	private selectInInlineTitle(name: string, range: { start: number; end: number }) {
 		window.setTimeout(() => {
 			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-			const el = view?.containerEl.querySelector(".inline-title") as HTMLElement | null;
+			const el = view?.containerEl.querySelector<HTMLElement>(".inline-title");
 			if (!el || el.textContent !== name) return;
 			const node = el.firstChild;
 			if (!node || node.nodeType !== Node.TEXT_NODE || (node.textContent?.length ?? 0) < range.end) return;
@@ -4547,7 +4540,10 @@ export default class PowerExplorerPlugin extends Plugin {
 			if (!want.has(p)) continue;
 			const f = this.app.vault.getAbstractFileByPath(p);
 			if (!f) continue;
-			for (const u of this.moveUnit(f)) if (!seen.has(u.path)) (seen.add(u.path), out.push(u));
+			for (const u of this.moveUnit(f)) if (!seen.has(u.path)) {
+					seen.add(u.path);
+					out.push(u);
+				}
 		}
 		return out;
 	}
@@ -4614,12 +4610,10 @@ export default class PowerExplorerPlugin extends Plugin {
 			`${files.length} pages`,
 			() => {
 				void (async () => {
-					const fm = this.app.fileManager as unknown as { trashFile?: (file: TAbstractFile) => Promise<void> };
 					for (const t of bin) {
 						// a note beside its folder may already have gone with it
 						if (!this.app.vault.getAbstractFileByPath(t.path)) continue;
-						if (fm.trashFile) await fm.trashFile(t);
-						else await this.app.vault.trash(t, true);
+						await this.app.fileManager.trashFile(t);
 					}
 					this.clearMulti();
 					new Notice(`Power Explorer: deleted ${files.length} pages.`);
@@ -4633,7 +4627,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *  Alt+Up/Down nudges the manual order without a drag. */
 	private pagesKeydown(e: KeyboardEvent) {
 		if ((e.target as HTMLElement)?.tagName === "INPUT" && e.key !== "Escape") return;
-		const rows = Array.from(this.pagesEl?.querySelectorAll(".pe-page") ?? []) as HTMLElement[];
+		const rows = Array.from(this.pagesEl?.querySelectorAll<HTMLElement>(".pe-page") ?? []);
 		if (!rows.length) return;
 		const idx = rows.findIndex((r) => r.hasClass("is-selected"));
 		const cur = idx >= 0 ? idx : rows.findIndex((r) => r.hasClass("is-active"));
@@ -4729,9 +4723,9 @@ export default class PowerExplorerPlugin extends Plugin {
 		if (e.pointerType === "touch") return; // touch drags scroll the tree; phones reorder via desktop for now
 		const target = e.target as HTMLElement;
 		if (!target?.closest) return;
-		const title = target.closest(
+		const title = target.closest<HTMLElement>(
 			".nav-file-title[data-path], .nav-folder-title[data-path], .pe-page[data-path], .pe-notebook[data-path], .pe-drill-folder[data-path]"
-		) as HTMLElement | null;
+		);
 		if (!title || !title.closest(".nav-files-container, .pe-pages, .pe-notebooks-pane")) return;
 		if (title.closest(".pe-recent-list")) return; // Recent Pages is a view, not an arrangeable folder
 		if (target.closest(".nav-folder-collapse-indicator")) return;
@@ -4811,19 +4805,18 @@ export default class PowerExplorerPlugin extends Plugin {
 			this.resolveNotebooksDrop(e, el);
 			return;
 		}
-		const pages = el.closest(".pe-pages") as HTMLElement | null;
+		const pages = el.closest<HTMLElement>(".pe-pages");
 		if (pages) {
 			this.resolvePagesDrop(e, el);
 			return;
 		}
-		const container = el.closest(".nav-files-container") as HTMLElement | null;
+		const container = el.closest<HTMLElement>(".nav-files-container");
 		if (!container) return;
-		let title = el!.closest(".nav-file-title[data-path], .nav-folder-title[data-path]") as HTMLElement | null;
+		let title = el!.closest<HTMLElement>(".nav-file-title[data-path], .nav-folder-title[data-path]");
 		if (!title) {
 			// gaps and indent padding count as their enclosing row
-			const block = el!.closest(".nav-folder, .nav-file") as HTMLElement | null;
-			title = (block?.querySelector(":scope > .nav-folder-title[data-path], :scope > .nav-file-title[data-path]") ??
-				null) as HTMLElement | null;
+			const block = el!.closest<HTMLElement>(".nav-folder, .nav-file");
+			title = block?.querySelector<HTMLElement>(":scope > .nav-folder-title[data-path], :scope > .nav-file-title[data-path]") ?? null;
 		}
 		if (!title) {
 			// open space below the tree: drop at the end of the vault root
@@ -4932,7 +4925,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		const d = this.drag!;
 		const pane = this.notebooksEl;
 		if (!pane) return;
-		const row = el.closest(".pe-notebook[data-path]") as HTMLElement | null;
+		const row = el.closest<HTMLElement>(".pe-notebook[data-path]");
 		if (row) {
 			this.resolveFolderRowDrop(e, row);
 			return;
@@ -4958,13 +4951,13 @@ export default class PowerExplorerPlugin extends Plugin {
 	private resolvePagesDrop(e: PointerEvent, el: HTMLElement) {
 		const d = this.drag!;
 		if (el.closest(".pe-back")) return; // the back row is navigation, not a target
-		const frow = el.closest(".pe-drill-folder[data-path]") as HTMLElement | null;
+		const frow = el.closest<HTMLElement>(".pe-drill-folder[data-path]");
 		if (frow) {
 			this.resolveFolderRowDrop(e, frow);
 			return;
 		}
 		if (el.closest(".pe-drill-folders")) return; // gaps between folder rows
-		const row = el.closest(".pe-page[data-path]") as HTMLElement | null;
+		const row = el.closest<HTMLElement>(".pe-page[data-path]");
 		const showLine = (rect: DOMRect, atTop: boolean) => {
 			const s = d.line!.style;
 			d.line!.addClass("pe-line-on");
@@ -7370,7 +7363,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		document
 			.querySelectorAll(".workspace-drawer.mod-left .workspace-drawer-tab-options-list > .workspace-tab-header:not(.pe-drawer-cmd)")
 			.forEach((el) => {
-				if (!(el instanceof HTMLElement)) return;
+				if (!el.instanceOf(HTMLElement)) return;
 				const type = el.dataset.type ?? "";
 				const label = el.querySelector(".workspace-tab-header-inner-title")?.textContent?.trim() ?? "";
 				if (type && label && !natives.some((n) => n.type === type)) natives.push({ type, label });
@@ -7515,7 +7508,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 				});
 				el.addEventListener("dragover", (ev) => {
 					ev.preventDefault();
-					const moving = list.querySelector(".is-dragging") as HTMLElement | null;
+					const moving = list.querySelector<HTMLElement>(".is-dragging");
 					if (!moving || moving === el) return;
 					// past the halfway line it goes below this row, which is the
 					// gesture reading you expect from every other list
@@ -7941,7 +7934,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			const q = this.query.trim().toLowerCase();
 			setVisible(tabBar, !q);
 			for (const sec of Array.from(body.children) as HTMLElement[]) {
-				const items = Array.from(sec.querySelectorAll(":scope > .setting-item:not(.setting-item-heading)")) as HTMLElement[];
+				const items = Array.from(sec.querySelectorAll<HTMLElement>(":scope > .setting-item:not(.setting-item-heading)"));
 				if (!q) {
 					for (const it of items) setVisible(it, true);
 					setVisible(sec, sec.dataset.tab === this.activeTab);

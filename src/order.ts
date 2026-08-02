@@ -474,7 +474,7 @@ export const TEMPLATE_META_KEYS = ["icon", "description", "filename", "folders",
  *  list, as `folders` often is) takes its whole block with it. If nothing but
  *  template keys was in there, the block goes entirely. */
 export function stripTemplateMeta(body: string): string {
-	const m = body.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/);
+	const m = body.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/);
 	if (!m) return body;
 	const rest = body.slice(m[0].length);
 	let dropping = false;

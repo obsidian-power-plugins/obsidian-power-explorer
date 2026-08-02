@@ -1,6 +1,6 @@
 {
 	"name": "powerexplorer",
-	"version": "1.35.14",
+	"version": "1.35.15",
 	"description": "Obsidian plugin: arrange files and folders by hand with drag-and-drop, and search the whole vault instantly by word prefix",
 	"main": "main.js",
 	"type": "module",
