@@ -1,4 +1,4 @@
-// Power Explorer: pure ordering logic. No Obsidian imports — everything here
+// Power Explorer: pure ordering logic. No Obsidian imports, everything here
 // is unit-tested with Node (npm test).
 //
 // The data model is deliberately sparse: `Orders` maps a folder path to the
@@ -30,15 +30,15 @@ export function nameOf(path: string): string {
 }
 
 /** A child path inside a folder. The vault root is "/" (or ""), and a child of
- *  the root is just its name — "/Foo" is not a path this vault would recognise. */
+ *  the root is just its name, "/Foo" is not a path this vault would recognize. */
 export function joinPath(dir: string, name: string): string {
 	return !dir || dir === "/" ? name : dir + "/" + name;
 }
 
 /**
  * Order a folder's live children by the stored manual order. Names missing
- * from the order (new/unarranged items) keep their incoming relative order —
- * Obsidian's own sort — and land at the bottom (or top). Stale names in the
+ * from the order (new/unarranged items) keep their incoming relative order
+ * Obsidian's own sort, and land at the bottom (or top). Stale names in the
  * order (deleted/renamed away) are simply ignored, never fatal.
  */
 export function applyOrder(names: string[], order: string[] | undefined, unranked: "top" | "bottom" = "bottom"): string[] {
@@ -55,7 +55,7 @@ export function applyOrder(names: string[], order: string[] | undefined, unranke
 
 /**
  * Sort a folder's children the way the file explorer's own sort menu would, for
- * when the explorer cannot be asked directly — mobile has no getSortedFolderItems,
+ * when the explorer cannot be asked directly, mobile has no getSortedFolderItems,
  * so without this its children fall back to raw vault order.
  *
  * `mode` is the explorer's own sortOrder, read from its view state, so this
@@ -108,13 +108,13 @@ export function pathDepth(path: string): number {
 }
 
 /**
- * The accent for a notebook the user has not coloured: walk the palette by
- * position so neighbours never share a colour, and nothing has to be stored.
+ * The accent for a notebook the user has not colored: walk the palette by
+ * position so neighbours never share a color, and nothing has to be stored.
  *
  * Position, not a hash of the name: hashing names into a fixed palette collides
- * badly (twelve notebooks over twelve colours averages about seven distinct, and
+ * badly (twelve notebooks over twelve colors averages about seven distinct, and
  * three identical covers in a row reads as a bug rather than a scheme). The cost
- * is that colours follow the arrangement, so an explicit colour is how you pin
+ * is that colors follow the arrangement, so an explicit color is how you pin
  * one to a notebook for good.
  */
 export function autoAccent(index: number, palette: string[]): string | null {
@@ -127,7 +127,7 @@ export function autoAccent(index: number, palette: string[]): string | null {
  *
  * data.json is a synced file: other devices write it, and a device that has been
  * idle still holds whatever it read when its plugin loaded. Writing that whole
- * object back reverts every change made anywhere else since — which is how a
+ * object back reverts every change made anywhere else since, which is how a
  * phone that merely opened a note (touching recentPages) erased favorites pinned
  * on a laptop hours earlier.
  *
@@ -137,13 +137,13 @@ export function autoAccent(index: number, palette: string[]): string | null {
  * from disk was written by a version that did not know it, and keeps ours rather
  * than resetting to a default.
  *
- * A key holding one value per folder — `orders` above all — needs that same rule
+ * A key holding one value per folder (`orders` above all) needs that same rule
  * one level down, and this is where it used to stop. `orders` is ONE key holding
  * every folder's manual arrangement, so dragging a single page in a single folder
  * marked the whole key as ours and published this device's entire map over the
  * disk's. Every folder arranged on another device since this one last read was
  * erased by a device that had never seen it, and a folder whose entry vanishes
- * silently falls back to the app's own sort — which is what "my order changed
+ * silently falls back to the app's own sort, which is what "my order changed
  * again" looks like from the outside. Per-entry, one drag publishes one folder.
  */
 export function mergeForSave<T extends object>(ours: T, baseline: T, disk: Partial<T> | null): T {
@@ -188,7 +188,7 @@ export const DEVICE_KEYS = ["recentPages"] as const;
 
 /** A copy without the per-device keys. Used on both sides of the file: what is
  *  read from disk never reaches memory, and what memory writes never reaches
- *  disk. Deleting rather than blanking matters while a fleet is mid-upgrade —
+ *  disk. Deleting rather than blanking matters while a fleet is mid-upgrade
  *  a blank published over a device still on the old build would wipe the list
  *  it is actively keeping. */
 export function withoutDeviceKeys<T extends object>(o: T): Partial<T> {
@@ -237,7 +237,7 @@ export function overlayDeviceState<T extends object>(target: T, raw: string | nu
  * The same three-way rule, entry by entry.
  *
  * Start from the disk, so every folder another device arranged survives; drop
- * only what we deliberately removed (present in the baseline, gone from ours —
+ * only what we deliberately removed (present in the baseline, gone from ours
  * a "Reset manual order"); then lay our own changed entries over the top. Two
  * devices arranging the SAME folder still settles last-writer-wins, but that is
  * one folder losing a race rather than a whole vault losing its arrangement.
@@ -261,7 +261,7 @@ function mergeEntries(
 
 /**
  * How one folder decides its own order. "manual" is the default and the only
- * mode that honours a stored drag order; the name modes force a sort and ignore
+ * mode that honors a stored drag order; the name modes force a sort and ignore
  * that order, for folders that should stay filed alphabetically no matter what
  * lands in them (a People folder that plugins keep adding notes to).
  */
@@ -348,7 +348,7 @@ export function insertOrder(visible: string[], dragged: string, before: string |
 /**
  * The same for a whole selection: every dragged name lands as one block at the
  * drop point, and the block keeps the order the LIST had them in, not the order
- * they were clicked — what you saw picked up is what lands.
+ * they were clicked, what you saw picked up is what lands.
  *
  * Dropping onto the selection itself degrades to the end, the way a single item
  * dropped before itself does. One rule for both, however many are moving.
@@ -437,7 +437,7 @@ export function removeFromHidden(hidden: string[], path: string): string[] {
 /** Drop hidden-folder paths that no longer point to a real folder. A folder
  *  renamed or moved WITHOUT our rename hook seeing it (the filesystem, Sync from
  *  another device, or a move made while the plugin was off) leaves a stale path
- *  behind — otherwise a phantom "N hidden" the show-hidden toggle can never
+ *  behind, otherwise a phantom "N hidden" the show-hidden toggle can never
  *  reveal or clear. `exists` reports whether a path is currently a folder. */
 export function pruneHidden(hidden: string[], exists: (path: string) => boolean): string[] {
 	return hidden.filter((h) => exists(h));
@@ -460,8 +460,8 @@ export function dropSection(path: string | null, deleted: string): string | null
 	return path;
 }
 
-/** Frontmatter keys that describe the TEMPLATE — how its gallery card looks,
- *  what it names the page, and which folders it belongs to — rather than the
+/** Frontmatter keys that describe the TEMPLATE, how its gallery card looks,
+ *  what it names the page, and which folders it belongs to, rather than the
  *  page's real content. `icon`/`description` are the friendly names;
  *  `pe-icon`/`pe-desc` are the original aliases, still honored so templates
  *  made before the rename keep working. */

@@ -1,15 +1,15 @@
-// Power Explorer: pure full-text search engine. No Obsidian imports — everything
+// Power Explorer: pure full-text search engine. No Obsidian imports, everything
 // here is unit-tested with Node (npm test); main.ts supplies the vault glue
 // (reading files, watching events, persistence, and the modal UI).
 //
 // Design goals, in order: PREDICTABLE (word-prefix matching, never
-// fuzzy — a result always visibly contains what was typed), ranked the way
+// fuzzy, a result always visibly contains what was typed), ranked the way
 // spatial memory expects (title hits first, then recency/pins via caller-injected
 // boosts, then body relevance), and incremental (one file in, one file out).
 //
 // The index unit is a heading-scoped CHUNK (adapted from Power Capture's
-// ask-your-vault BM25). Each document also gets two synthetic chunks — its
-// title+aliases and its tags+folder path — so a note is findable by name, tag,
+// ask-your-vault BM25). Each document also gets two synthetic chunks, its
+// title+aliases and its tags+folder path, so a note is findable by name, tag,
 // or the section it lives in, and AND semantics work across all of them.
 
 import { isUnder } from "./order";
@@ -59,7 +59,7 @@ export interface SearchHit {
 	/** Highlight ranges into `title`, built by the same matcher as snippets so
 	 *  titles and excerpts always light up identically. */
 	titleRanges: [number, number][];
-	/** Every query word (or a prefix) is in the title — a real title match, not
+	/** Every query word (or a prefix) is in the title, a real title match, not
 	 *  a coincidental single-word hit. Drives the "In title" vs "In text" split. */
 	titleAll: boolean;
 	/** The surface terms that matched (exact terms plus prefix completions). */
@@ -81,7 +81,7 @@ export function tokenize(text: string): string[] {
  * hit can scroll the editor to its section. Frontmatter lines are skipped but
  * still counted (anchors match the file on disk). Sections longer than
  * MAX_CHUNK wrap, each slice anchored at the line its text starts on, so a hit
- * deep inside a long transcript lands near the hit — not at the heading.
+ * deep inside a long transcript lands near the hit: not at the heading.
  * A heading with no body still yields a chunk, so headings are searchable.
  */
 export function chunkNote(content: string): Chunk[] {
@@ -145,13 +145,13 @@ const EXPANSION_WEIGHT = 0.6;
  *  first), so a two-letter prefix can't fan out into thousands of terms. */
 const MAX_EXPANSIONS = 64;
 
-/** Title tier bonuses — deterministic "the title IS what I typed" ranking
+/** Title tier bonuses, deterministic "the title IS what I typed" ranking
  *  that BM25 alone can't promise. Sized to outrank typical chunk scores. */
 const TIER_EXACT_TITLE = 7;
 const TIER_TITLE_PREFIX = 5;
 const TIER_ALL_IN_TITLE = 3;
 /** A literal phrase (the typed words adjacent) is the strongest relevance
- *  signal there is, so it outranks even a coincidental exact-title match —
+ *  signal there is, so it outranks even a coincidental exact-title match
  *  "em dash" puts the page that says "em dashes" first, above pages that
  *  merely have "embedded" and "dashboard" somewhere. */
 const TIER_PROXIMITY = 8;
@@ -176,7 +176,7 @@ interface IDoc {
 /**
  * The vault-wide index: BM25 over chunks, word-prefix expansion against a
  * sorted term dictionary, hard AND across query tokens (every token must match
- * somewhere in a document — its body, title, tags, or folder path), quoted
+ * somewhere in a document, its body, title, tags, or folder path), quoted
  * phrases as a substring post-filter. Pure and incremental; persistence is the
  * caller's job (store raw DocInputs, feed them back through addDoc on load).
  */
@@ -185,7 +185,7 @@ export class VaultIndex {
 	private postings = new Map<string, Map<number, number>>();
 	private byPath = new Map<string, number[]>();
 	/** Every distinct term a document put into the postings, so removal costs
-	 *  O(doc terms), never O(dictionary) — folder deletes stay instant. */
+	 *  O(doc terms), never O(dictionary), folder deletes stay instant. */
 	private docTerms = new Map<string, Set<string>>();
 	private docs = new Map<string, IDoc>();
 	private nextId = 1;
@@ -331,7 +331,7 @@ export class VaultIndex {
 		}
 
 		// quoted phrases: a candidate must contain each phrase as a real substring
-		// (words in order, any short separator — space, newline, hyphen, dot).
+		// (words in order, any short separator, space, newline, hyphen, dot).
 		// Tested against CLEANED text and against every chunk kind, so a phrase
 		// that only lives in a title, tag, or folder name still matches, and
 		// markdown decoration between the words can't hide one.
@@ -364,7 +364,7 @@ export class VaultIndex {
 		}
 
 		// implicit proximity: mark docs where the typed words appear ADJACENT as
-		// a real phrase — each word but the last matched WHOLE (so "em dashes"
+		// a real phrase: each word but the last matched WHOLE (so "em dashes"
 		// counts, "email dashboard" and "embedded dashboard" do not), the last
 		// may be a prefix. Filtering still uses plain AND, so this only RERANKS:
 		// the phrase page floats to the top; scattered matches stay found.
@@ -433,7 +433,7 @@ export class VaultIndex {
 			if (!doc) continue;
 			let score = d?.score ?? 1; // phrase-only match with no scored terms still ranks
 			// a real title match: every query word (or a prefix) is in the title,
-			// not just one coincidental word — drives both the tier and the split
+			// not just one coincidental word, drives both the tier and the split
 			const titleAll = tokens.length > 0 && tokens.every((t) => doc.titleTokens.some((tt) => tt === t || tt.startsWith(t)));
 			if (tokens.length) {
 				if (doc.titleTokens.join(" ") === joined) score += TIER_EXACT_TITLE;
@@ -486,7 +486,7 @@ export class VaultIndex {
 	/**
 	 * OR-mode BM25 over content chunks with their FULL text, for RAG consumers
 	 * (Power Capture's Ask-your-vault). No AND gate, no prefix expansion, no
-	 * title tiers — the caller brings its own expanded synonym terms, where
+	 * title tiers, the caller brings its own expanded synonym terms, where
 	 * requiring every one would guarantee zero results.
 	 */
 	retrieveChunks(
@@ -524,7 +524,7 @@ export class VaultIndex {
 		// Returning the title chunk itself would hand the answer layer a bare
 		// filename as evidence, which is why it was skipped outright. But
 		// skipping made a note unreachable by its own name whenever the name is
-		// not repeated inside it — a YouTube capture titled "ChatGPT Offered Me
+		// not repeated inside it, a YouTube capture titled "ChatGPT Offered Me
 		// $2m To Keep Quiet" whose transcript is about superintelligence
 		// timelines and contains none of those words. Asking about it by title
 		// matched only the one chunk that could never be returned.

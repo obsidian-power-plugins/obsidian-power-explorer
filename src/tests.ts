@@ -75,18 +75,18 @@ eq(joinPath("", "c.md"), "c.md", "the empty root reads the same as /");
 eq(joinPath(parentPathOf("a/b/c.md"), "d.md"), "a/b/d.md", "a nested sibling");
 eq(joinPath(parentPathOf("c.md"), "d.md"), "d.md", "a root sibling");
 
-// --- autoAccent (notebooks arrive coloured without being configured) ---
+// --- autoAccent (notebooks arrive colored without being configured) ---
 {
 	const PAL = ["#0063B1", "#00B7C3", "#107C10", "#FFB900", "#E81123"];
-	eq(autoAccent(0, PAL), "#0063B1", "the first notebook takes the first colour");
-	eq(autoAccent(2, PAL), "#107C10", "colours follow position");
-	// The whole point: no two neighbours share a colour, which a name hash could
+	eq(autoAccent(0, PAL), "#0063B1", "the first notebook takes the first color");
+	eq(autoAccent(2, PAL), "#107C10", "colors follow position");
+	// The whole point: no two neighbours share a color, which a name hash could
 	// not promise (it averaged ~7 distinct over 12 notebooks).
 	const run = [0, 1, 2, 3, 4].map((i) => autoAccent(i, PAL));
 	eq(new Set(run).size, 5, "a palette-length run is all distinct");
 	eq(autoAccent(5, PAL), "#0063B1", "past the end it wraps around");
-	eq(autoAccent(0, []), null, "no palette, no colour (never undefined)");
-	eq(autoAccent(-1, PAL), null, "a nonsense index yields no colour, never undefined");
+	eq(autoAccent(0, []), null, "no palette, no color (never undefined)");
+	eq(autoAccent(-1, PAL), null, "a nonsense index yields no color, never undefined");
 }
 
 // --- sortChildren (the explorer's sort, for when mobile can't be asked) ---
@@ -190,7 +190,7 @@ eq(mergeForSave({ a: 1 }, { a: 1 }, null), { a: 1 }, "no disk state yet = write 
 	// THE BUG, five devices deep: `orders` is ONE key holding every folder's
 	// arrangement. This device drags a page in Phase 1; another device arranged
 	// Phase 2 an hour ago and this one has never seen it. Whole-key merge marked
-	// `orders` as ours and published a map with no Phase 2 in it — and a folder
+	// `orders` as ours and published a map with no Phase 2 in it, and a folder
 	// with no entry silently falls back to the app's own sort.
 	const baseline = { orders: { "Phase 1": ["a.md", "b.md"] } };
 	const ours = { orders: { "Phase 1": ["b.md", "a.md"] } };
@@ -388,7 +388,7 @@ eq(
 {
 	// The reported bug: _attachments was renamed + moved to _resources/attachments
 	// OUTSIDE our rename hook, so its old path is stranded. pruneHidden keeps only
-	// the paths that still resolve to a folder — clearing the phantom "1 hidden".
+	// the paths that still resolve to a folder, clearing the phantom "1 hidden".
 	const live = new Set(["_resources/attachments", "Acme/Keep"]);
 	eq(
 		pruneHidden(["_attachments", "_resources/attachments", "Acme/Keep"], (p) => live.has(p)),

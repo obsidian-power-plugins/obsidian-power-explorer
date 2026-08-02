@@ -1,4 +1,4 @@
-// Power Explorer: the page template engine. No Obsidian imports — everything
+// Power Explorer: the page template engine. No Obsidian imports, everything
 // here is unit-tested with Node (npm test).
 //
 // Two jobs, one token vocabulary: work out what a new page is CALLED and what

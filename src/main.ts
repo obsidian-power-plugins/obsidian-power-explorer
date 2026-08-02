@@ -98,7 +98,7 @@ const SECTION_COLORS: [string, string][] = [
 ];
 
 /** The palette the auto-accent walks. Silver and Tan are dropped: they read as
- *  "no colour set" next to the others, which is the look this is escaping. */
+ *  "no color set" next to the others, which is the look this is escaping. */
 const PALETTE: string[] = SECTION_COLORS.filter(([n]) => n !== "Silver" && n !== "Tan").map(([, hex]) => hex);
 
 interface PowerExplorerSettings {
@@ -127,16 +127,16 @@ interface PowerExplorerSettings {
 	expandedNbs: string[];
 	/** Section color accents: folder path -> hex. */
 	colors: Record<string, string>;
-	/** Pinned children per folder (by name, in pin order) — glued above any sort. */
+	/** Pinned children per folder (by name, in pin order), glued above any sort. */
 	pins: Orders;
 	/** Per-folder forced sort: folder path -> mode. Folders absent here are
-	 *  "manual" — the drag order decides. A forced folder ignores its drag order
+	 *  "manual", the drag order decides. A forced folder ignores its drag order
 	 *  and re-sorts itself as items come and go. */
 	folderSort: Record<string, SortMode>;
 	/** Section icons: folder path -> emoji. */
 	icons: Record<string, string>;
-	/** Give notebooks a colour from the palette when none was chosen, so they
-	 *  arrive with covers instead of grey outlines. An explicit colour wins. */
+	/** Give notebooks a color from the palette when none was chosen, so they
+	 *  arrive with covers instead of gray outlines. An explicit color wins. */
 	autoNotebookColors: boolean;
 	/** On phones, let the navigation drawer take the whole screen rather than
 	 *  leaving a slice of the note showing beside it. */
@@ -209,7 +209,7 @@ interface PowerExplorerSettings {
 	/** Whether a template using {{ask:Question}} opens its dialog. Off fills the
 	 *  tokens with their own defaults instead, without interrupting. */
 	askForAnswers: boolean;
-	/** Starter content for the ＋ New template button — frontmatter + body the
+	/** Starter content for the ＋ New template button, frontmatter + body the
 	 *  new template note is seeded with. Empty uses the built-in default. */
 	templateSeed: string;
 	/** Command ids pinned to the launcher's Favorites tab, in the user's own
@@ -284,7 +284,7 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 /** Image types the OCR pipeline covers (what Text Extractor can read). */
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp"]);
 
-/** Image types usable as a template icon (SVG and GIF included — they make fine
+/** Image types usable as a template icon (SVG and GIF included, they make fine
  *  little glyphs even though the OCR pipeline skips them). */
 const ICON_IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg"]);
 
@@ -350,11 +350,11 @@ type ExplorerView = {
 	requestSort?: () => void;
 	/** The app's own sort menu calls this. Internal, so always typeof-checked. */
 	setSortOrder?: (order: string) => void;
-	/** Carries the explorer's own state — its toggles and its sort order. */
+	/** Carries the explorer's own state, its toggles and its sort order. */
 	getState?: () => { autoReveal?: boolean; sortOrder?: string } | undefined;
 };
 
-/** In-flight drag state. Exists only between pointerdown and pointerup —
+/** In-flight drag state. Exists only between pointerdown and pointerup
  *  when no drag is happening the plugin does zero per-frame work. */
 type DragState = {
 	/** The pressed row resolved to what actually moves (a page group moves as its
@@ -448,7 +448,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	private selectedPages = new Set<string>();
 	private selectAnchor: string | null = null;
 	/** Pages cut and waiting for somewhere to go: page paths, in list order.
-	 *  Session-only — a pending cut is a gesture in progress, not a setting. */
+	 *  Session-only, a pending cut is a gesture in progress, not a setting. */
 	private cutPaths: string[] = [];
 	/** Page groups (folder-note subfolders) start expanded; the ones you shut
 	 *  live in settings.collapsedGroups and survive a reload. */
@@ -733,7 +733,7 @@ export default class PowerExplorerPlugin extends Plugin {
 					return;
 				}
 				// Follow the note to the section that SHOWS it, which for anything
-				// inside a page group is not its parent folder — the group is a row
+				// inside a page group is not its parent folder, the group is a row
 				// in the section above it. Opening the page a new folder arrives
 				// with used to land the pane inside that folder, with a one-row list
 				// and a back arrow where the section had been.
@@ -758,7 +758,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.registerDomEvent(document, "pointercancel", () => {
 			if (this.drag) this.cancelDrag();
 		});
-		// Our pointer drag replaces the native HTML5 drag inside the tree —
+		// Our pointer drag replaces the native HTML5 drag inside the tree
 		// swallow any native drag that still manages to start from an armed press.
 		this.registerDomEvent(document, "dragstart", (e) => {
 			if (this.drag) e.preventDefault();
@@ -969,7 +969,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 		this.addCommand({ id: "new-page-gallery", name: "New page from template", icon: "file-plus", callback: () => this.ribbonNewPage() });
 
-		// A Start-menu-style launcher of the Power suite's app-level commands —
+		// A Start-menu-style launcher of the Power suite's app-level commands
 		// the buried "open something" ones most users never discover.
 		this.addCommand({ id: "open-launcher", name: "Power apps launcher", icon: "layout-grid", callback: () => new PowerLauncherModal(this).open() });
 
@@ -1170,7 +1170,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	/**
 	 * Adopt external edits to data.json (order-sync scripts, settings sync
 	 * tools) instead of clobbering them with the next save of stale memory.
-	 * Desktop only — mobile has no fs watcher and relies on the hook above.
+	 * Desktop only, mobile has no fs watcher and relies on the hook above.
 	 */
 	private watchDataFile() {
 		// Ask for node before checking the platform and a phone logs the refusal as
@@ -1192,7 +1192,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			});
 			this.register(() => watcher.close());
 		} catch {
-			/* watcher unavailable — trust memory, as before */
+			/* watcher unavailable, trust memory, as before */
 		}
 	}
 
@@ -1289,7 +1289,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	/* ---------------- sorting ---------------- */
 
 	/** Wrap the explorer's own per-folder sort. It is called lazily, only for
-	 *  folders being rendered, so cost scales with what's on screen — never
+	 *  folders being rendered, so cost scales with what's on screen, never
 	 *  with vault size. */
 	private patchExplorers() {
 		for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
@@ -1418,7 +1418,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *
 	 * The app opens and shuts this list by toggling is-collapsed on its own taps,
 	 * but a tap OUTSIDE it did nothing, so it hung open over the folder list. This
-	 * shuts it on any click that is not inside it — which the trigger is, so
+	 * shuts it on any click that is not inside it, which the trigger is, so
 	 * tapping the button still toggles as before, and a tap on a folder both opens
 	 * that folder and dismisses the menu.
 	 *
@@ -1802,7 +1802,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *
 	 * The ribbon step earns its keep. Most plugins (the Power ones included) call
 	 * addCommand with an id and a name and no icon at all, then register a ribbon
-	 * button with the icon they actually wanted — so reading the command alone
+	 * button with the icon they actually wanted, so reading the command alone
 	 * gave every added button the same terminal glyph. The lookup is on internal
 	 * shape, so it is guarded and simply falls through if that shape changes.
 	 */
@@ -1889,7 +1889,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		//
 		// This runs on every layout change, and appending an attached node MOVES
 		// it: a node taken out and put back between mousedown and mouseup never
-		// gets its click. That is what "I have to press the button twice" was —
+		// gets its click. That is what "I have to press the button twice" was
 		// the first press landed on a button this pass had just re-seated, so the
 		// press was swallowed and only the second one, with no layout change in
 		// flight, got through. Re-seating only a bar that is genuinely out of
@@ -1988,8 +1988,8 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/**
-	 * Is this folder a page group — a row inside its parent rather than a place
-	 * you step into? Either shape counts, because pairPages honours both: a note
+	 * Is this folder a page group, a row inside its parent rather than a place
+	 * you step into? Either shape counts, because pairPages honors both: a note
 	 * inside it, or a note beside it carrying its name.
 	 */
 	private isGroupFolder(folder: TFolder): boolean {
@@ -2002,7 +2002,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * not a page group. Every group passed on the way is expanded, because until
 	 * it is, the row does not render at all.
 	 *
-	 * A group is a row, not a place you step into — and groups nest. Checking one
+	 * A group is a row, not a place you step into, and groups nest. Checking one
 	 * level meant a note two groups deep sent the pane INTO the group holding it,
 	 * which is how making a new folder inside a group swapped the whole pane for
 	 * a one-row list you had to walk back out of.
@@ -2130,7 +2130,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	/** A folder's children in effective manual order, computed straight from our
 	 *  order state rather than the file explorer's patched sort hook. The explorer
 	 *  view loads DEFERRED, so on a Ctrl+R reload its hook isn't wrapped yet when
-	 *  the first pages render runs — which used to leave the pages pane
+	 *  the first pages render runs, which used to leave the pages pane
 	 *  alphabetical until the next click re-rendered it. This mirrors the hook:
 	 *  a base sort (Obsidian's own when a patched view can give it, else raw
 	 *  children), the hidden-folder filter, then orderItems. */
@@ -2203,7 +2203,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		if (this.pagesEl) this.renderPages();
 	}
 
-	/** A folder's children in their effective order — INCLUDING hidden folders,
+	/** A folder's children in their effective order, INCLUDING hidden folders,
 	 *  so a reorder among visible siblings never silently drops the rank of a
 	 *  folder that happens to be hidden at the time. */
 	private visibleNames(folder: TFolder): string[] {
@@ -2292,8 +2292,8 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.enforceEditMode();
 	}
 
-	/** The colour a folder paints with. The user's own choice always wins; a
-	 *  notebook they never coloured falls back to its place in the palette, which
+	/** The color a folder paints with. The user's own choice always wins; a
+	 *  notebook they never colored falls back to its place in the palette, which
 	 *  is why `nth` is its position among the notebooks on screen. Anything that
 	 *  is not a notebook stays uncoloured unless chosen. */
 	private accentOf(path: string, notebook: boolean, nth: number): string | null {
@@ -2400,7 +2400,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/** Clear every hidden entry whose folder no longer exists. User-initiated
-	 *  only (a settings button) — deliberately never at load, where a Sync
+	 *  only (a settings button), deliberately never at load, where a Sync
 	 *  catch-up that lands data.json before the folders would delete a live
 	 *  mark. Returns how many stale entries were removed. */
 	removeMissingHidden(): number {
@@ -2435,9 +2435,9 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *  rename hook seeing it (the filesystem, Sync from another device, or a move
 	 *  made while the plugin was off) leaves a stale path in settings.hidden;
 	 *  counting it would show a phantom "N hidden" the eye toggle can never
-	 *  reveal. The stale entry is left in place — pruning it here and persisting
+	 *  reveal. The stale entry is left in place, pruning it here and persisting
 	 *  could unhide a folder across every device on a Sync catch-up that lands
-	 *  data.json before the folders — and stays clearable from the settings
+	 *  data.json before the folders, and stays clearable from the settings
 	 *  "Hidden folders" list, where missing entries are now flagged. */
 	liveHiddenCount(): number {
 		let n = 0;
@@ -2755,7 +2755,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * The note that makes a folder a page rather than a folder: one inside it
 	 * carrying its name. That reading is a convention, not something the app
 	 * itself means, so it is a setting. Off, a folder is always a folder and the
-	 * same-named note is just a page inside it — which is what a vault wants when
+	 * same-named note is just a page inside it, which is what a vault wants when
 	 * naming a page after the folder it sits in is a habit rather than a marker.
 	 * The other shape, a note beside a folder of the same name, is unaffected:
 	 * pairPages reads that from the names alone.
@@ -2769,7 +2769,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/** Would a note inside this folder, carrying its name, make it a page? The
-	 *  test groupNote applies, asked without the note having to exist yet — so
+	 *  test groupNote applies, asked without the note having to exist yet, so
 	 *  conversion and rename-pairing read the rule from the same place.
 	 *
 	 *  A notebook or a section is a place you step into, never a page. Both it and
@@ -2787,15 +2787,15 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/**
 	 * A page group is one thing wearing two names: a folder, and the note that
-	 * anchors it. Rename half of it and the pairing dissolves — the note stops
+	 * anchors it. Rename half of it and the pairing dissolves, the note stops
 	 * matching the folder, the row drops out of the pages list, and the folder
 	 * reappears in the Folders block as though it had never been a page. And the
 	 * way that happens is not some corner case: it is retitling the note, from
 	 * the editor, which is how anyone renames a page.
 	 *
 	 * So the halves move together, whichever one was renamed and wherever the
-	 * rename came from — this pane, the explorer's F2, the inline title, another
-	 * plugin — because this rides the vault's own rename event rather than any one
+	 * rename came from, this pane, the explorer's F2, the inline title, another
+	 * plugin, because this rides the vault's own rename event rather than any one
 	 * entry point. Both shapes count: the note inside the folder, and the note
 	 * beside it.
 	 *
@@ -2844,7 +2844,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/**
 	 * Could this folder be given its own page? Only where a folder's own note
-	 * means "page" at all — the setting on, below section level — and only when
+	 * means "page" at all (the setting on, below section level) and only when
 	 * nothing anchors it yet: a note inside it, or one beside it carrying its
 	 * name, which pairPages reads from the names alone and which already seats
 	 * the folder in the list.
@@ -2861,7 +2861,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *
 	 * Folders made in this pane arrive holding their page (createFolderWithPage);
 	 * folders made in Obsidian's explorer, imported from a notebook, or made
-	 * before that rule existed never do — and a folder with no note has nothing
+	 * before that rule existed never do, and a folder with no note has nothing
 	 * to anchor a row, so the pane can only show it in the Folders block, out of
 	 * reach of the order that ranks everything else in the section. This is the
 	 * way back. The note goes in, the folder becomes a page group, and pairPages
@@ -2976,7 +2976,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/** The section's page entries in effective order: plain notes, plus page
-	 *  groups — a folder anchored by a same-named sibling note (the subpage
+	 *  groups, a folder anchored by a same-named sibling note (the subpage
 	 *  layout notebook importers produce) or by an inside folder note. */
 	private sectionEntries(folder: TFolder): { file: TFile; group: TFolder | null }[] {
 		const byName = new Map(folder.children.map((c) => [c.name, c]));
@@ -3015,7 +3015,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/** Paths under the folder whose CONTENT matches the filter, via the search
 	 *  index (same word-prefix semantics as Search everywhere). Null while
-	 *  search is off or still building — the filter then matches names only. */
+	 *  search is off or still building, the filter then matches names only. */
 	private contentMatches(q: string, folder: TFolder): Set<string> | null {
 		if (!q || !this.settings.searchEnabled || !this.search.ready) return null;
 		const scope = folder.path === "/" ? "" : folder.path;
@@ -3023,7 +3023,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/** The Recent Pages pseudo-section: last-opened notes, newest first, each
-	 *  with its section for context. Read-only — no drag, no New page. */
+	 *  with its section for context. Read-only: no drag, no New page. */
 	private renderRecent(inner: HTMLElement) {
 		const files = this.settings.recentPages
 			.map((p) => this.app.vault.getAbstractFileByPath(p))
@@ -3383,7 +3383,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		);
 	}
 
-	/** The section head, filter, and page list — shared by the desktop pages
+	/** The section head, filter, and page list, shared by the desktop pages
 	 *  pane and the phone drill view. Chunked so a 13,000-note attachments
 	 *  folder can never lock the UI: 200 rows at a time, more on scroll or click. */
 	private renderSectionPages(inner: HTMLElement, folder: TFolder) {
@@ -3464,7 +3464,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				});
 				// A double-click anywhere on the row toggles it too. The chevron is a
 				// small target to hit repeatedly in a long list, and the first click of
-				// the double has already opened the page — so this costs nothing: single
+				// the double has already opened the page, so this costs nothing: single
 				// click still opens, and the row grows a second way to do what the
 				// chevron does. Not with a modifier held: those clicks are selecting.
 				row.addEventListener("dblclick", (ev) => {
@@ -3545,7 +3545,7 @@ export default class PowerExplorerPlugin extends Plugin {
 							.setIcon("clipboard-paste")
 							.onClick(() => void this.pasteAt(anchorParent, anchorName))
 					);
-					// A group row is a folder, so it is somewhere pages can go INTO —
+					// A group row is a folder, so it is somewhere pages can go INTO
 					// which is the whole point of filing a page under another page.
 					// A plain page offers the same thing and becomes a group to take
 					// it, so the menu matches what dropping on the row does.
@@ -3642,7 +3642,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *
 	 * A group row is one thing: a page, and the subpages under it. Deleting only
 	 * its note left the folder and everything in it behind, with nothing to
-	 * anchor it in the list — so a page you deleted came back as a stray folder
+	 * anchor it in the list, so a page you deleted came back as a stray folder
 	 * in the Folders block, holding the subpages you thought went with it.
 	 *
 	 * The folder goes. The note goes with it when it lives inside; when it sits
@@ -3697,7 +3697,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/** Context menu for a folder row in the notebooks/drill panes. Triggering
 	 *  the file-menu event pulls in plugin items (Move, Search, Bookmark, base
-	 *  actions, our own color/hide/template) — but NOT the file explorer view's
+	 *  actions, our own color/hide/template), but NOT the file explorer view's
 	 *  built-in Rename/Delete, which the view adds itself and the event never
 	 *  carries. So we append them here. */
 	folderMenu(folder: TFolder, ev: MouseEvent) {
@@ -3843,7 +3843,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/** The folder the template gallery draws from: the explicit setting, or a
 	 *  top-level "Templates" folder when the setting is blank. "" means neither
-	 *  exists yet — the gallery then offers only a blank page. Scanning the whole
+	 *  exists yet, the gallery then offers only a blank page. Scanning the whole
 	 *  vault for "template" in the path was too greedy (it swept up research
 	 *  notes like "Bootstrap Templates"), so it's gone. */
 	private resolveTemplatesFolder(): string {
@@ -4120,7 +4120,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			const answers = await new Promise<Record<string, string> | null>((resolve) =>
 				new TemplateAskModal(this.app, tpl?.basename ?? "New page", fields, resolve).open()
 			);
-			// Cancelled means cancelled: no page, no half-filled draft to clean up.
+			// Canceled means cancelled: no page, no half-filled draft to clean up.
 			if (!answers) return null;
 			pattern = applyAnswers(pattern, answers);
 			raw = applyAnswers(raw, answers);
@@ -4130,7 +4130,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			pattern = applyAnswers(pattern, {});
 			raw = applyAnswers(raw, {});
 		}
-		// No pattern keeps the old behaviour exactly: Untitled, Untitled 1, …
+		// No pattern keeps the old behavior exactly: Untitled, Untitled 1, …
 		const rendered = pattern ? renderName(pattern, ctx) : { name: "Untitled", select: null };
 		// A once-a-day page opens instead of duplicating. Checked before anything
 		// is written, so pressing the button twice is a no-op rather than a mess.
@@ -4220,7 +4220,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		}).open();
 	}
 
-	/** Ribbon "New page": open the gallery for the most useful folder — the
+	/** Ribbon "New page": open the gallery for the most useful folder, the
 	 *  current section when the pages pane is up, otherwise the folder of the note
 	 *  you're in, otherwise the vault root. */
 	private ribbonNewPage() {
@@ -4343,8 +4343,8 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * Dragging is the direct way to move a page and the wrong way to move seven
 	 * of them into a folder three screens up: you are holding the whole list
 	 * hostage to one long scroll, and a slip drops them somewhere you did not
-	 * mean. Cut and paste splits that in two — say what moves, then go say where
-	 * — and the two halves can be minutes and a lot of scrolling apart.
+	 * mean. Cut and paste splits that in two, say what moves, then go say where
+	 *, and the two halves can be minutes and a lot of scrolling apart.
 	 *
 	 * The pages stay exactly where they are until something is pasted. Nothing is
 	 * copied to the system clipboard: this is a marked set inside the pane, and
@@ -4384,7 +4384,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		return files;
 	}
 
-	/** Paste at a position among a folder's pages — the drop the drag would have
+	/** Paste at a position among a folder's pages, the drop the drag would have
 	 *  made, without the drag. */
 	private async pasteAt(parent: TFolder, before: string | null) {
 		const files = this.cutFilesFor(parent);
@@ -4459,7 +4459,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *
 	 * A plain click and a Ctrl-click write to different places: one page in
 	 * `selectedPage`, a set of them in `selectedPages`. Click a page and
-	 * Ctrl-click the next and both light up, but the set holds only the second —
+	 * Ctrl-click the next and both light up, but the set holds only the second
 	 * so a selection that reads as two counts as one, the bulk menu (which wants
 	 * two) never appears, and Delete takes the second page alone. The two rows
 	 * even look different, one outlined and one barred, which is the state saying
@@ -4536,7 +4536,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * What has to travel when this row moves, anchor first.
 	 *
 	 * A page group is a folder and a note wearing one name, so moving the note
-	 * alone dissolves it — and for the shape where the note lives INSIDE the
+	 * alone dissolves it, and for the shape where the note lives INSIDE the
 	 * folder, moving the note is also moving it out of its own folder, which
 	 * leaves a stray folder holding the subpages you thought you were dragging.
 	 * The anchor is whichever half the parent's order actually ranks: the folder
@@ -4569,7 +4569,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * that parent.
 	 *
 	 * For most rows this is the note itself. For a group whose note lives INSIDE
-	 * its folder it is the folder — the note is not the section's child at all,
+	 * its folder it is the folder, the note is not the section's child at all,
 	 * it is one level down, so reading the drop position off the note aims every
 	 * calculation at the wrong folder. That is the difference between dropping a
 	 * page above a group and dropping it inside the group by accident.
@@ -4587,8 +4587,8 @@ export default class PowerExplorerPlugin extends Plugin {
 		return f ? this.rowAnchor(f) : null;
 	}
 
-	/** The folder a page anchors as a group, in either shape — the note inside
-	 *  it, or the note beside it — or null for a plain page. */
+	/** The folder a page anchors as a group, in either shape, the note inside
+	 *  it, or the note beside it, or null for a plain page. */
 	private groupOf(f: TFile): TFolder | null {
 		const parent = f.parent;
 		if (parent && this.groupNote(parent)?.path === f.path) return parent;
@@ -4892,7 +4892,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 	/** Shared folder-row drop math for our own panes (notebook, section, and
 	 *  drill-folder rows): edges reorder among the row's real siblings, the
-	 *  middle nests into the folder. A dragged NOTE is into-only — its rank
+	 *  middle nests into the folder. A dragged NOTE is into-only, its rank
 	 *  among folder rows would be invisible where pages don't render. */
 	private resolveFolderRowDrop(e: PointerEvent, row: HTMLElement) {
 		const d = this.drag!;
@@ -5024,7 +5024,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		}
 		// A plain page takes drops too, by becoming a group. Filing a page under
 		// another page should not depend on whether that page happens to have
-		// subpages already — the first one is exactly when you need it, and having
+		// subpages already, the first one is exactly when you need it, and having
 		// to make a folder by hand first is the step this removes.
 		//
 		// The middle fifth only, never the wider zone a folder gets: this one
@@ -5094,7 +5094,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/** Drop between siblings: freeze the folder's visible sequence with the
-	 *  dragged items at their new place. Works across folders too — they are
+	 *  dragged items at their new place. Works across folders too, they are
 	 *  moved first, then ranked exactly where they were dropped, as one block
 	 *  in list order. */
 	private async dropAt(files: TAbstractFile[], parent: TFolder, before: string | null) {
@@ -5119,7 +5119,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * Give a plain page a folder of its own, so things can go inside it.
 	 *
 	 * The folder is made BESIDE the note, not around it. pairPages reads a folder
-	 * and a same-named note as one row either way — note inside, or note beside —
+	 * and a same-named note as one row either way, note inside, or note beside
 	 * and beside means the note never moves: no rename, no re-linking, no window
 	 * where the page you are filing under is somewhere else. The row it already
 	 * had keeps its place in the order, and simply grows a chevron.
@@ -5160,7 +5160,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	/**
-	 * Move everything into `folder`, returning what is actually there now —
+	 * Move everything into `folder`, returning what is actually there now
 	 * items already in it included, since a reorder within one folder moves
 	 * nothing.
 	 *
@@ -5193,7 +5193,7 @@ export default class PowerExplorerPlugin extends Plugin {
 
 /** One document as persisted in search-index.json: everything addDoc needs,
  *  so a warm start never re-reads the vault. `attach` holds extracted PDF
- *  page text — the expensive part, cached until the file's mtime moves. */
+ *  page text, the expensive part, cached until the file's mtime moves. */
 interface StoredDoc {
 	mtime: number;
 	title: string;
@@ -5206,7 +5206,7 @@ interface StoredDoc {
 /**
  * The vault glue around VaultIndex (search.ts): builds the index cooperatively
  * (yielding so 20k notes never lock the UI), keeps it live from vault events,
- * and persists it to the plugin folder — a separate file from data.json, so
+ * and persists it to the plugin folder, a separate file from data.json, so
  * the external-edit watcher never mistakes index writes for settings changes.
  */
 class SearchService {
@@ -5214,7 +5214,7 @@ class SearchService {
 	/** Initial reconcile finished; results are complete from here on. */
 	ready = false;
 	private store: Record<string, StoredDoc> = {};
-	/** OCR text per image path, cached by mtime — the expensive part of image
+	/** OCR text per image path, cached by mtime, the expensive part of image
 	 *  search, never re-done for an unchanged file. */
 	private images: Record<string, { mtime: number; text: string }> = {};
 	/** Each note's embedded images at last index time, so an embed-set change
@@ -5396,7 +5396,7 @@ class SearchService {
 	/** (Re)index one file: markdown is chunked with its cache-provided tags and
 	 *  aliases (plus its embedded images' OCR text, attached live, never stored
 	 *  twice); PDFs get their text layer extracted, page by page. `force` skips
-	 *  the mtime short-circuit — used when an image's OCR text arrives and the
+	 *  the mtime short-circuit, used when an image's OCR text arrives and the
 	 *  unchanged notes embedding it must pick it up. */
 	async indexFile(f: TFile, force = false) {
 		if (!this.plugin.settings.searchEnabled || !this.indexable(f)) return;
@@ -5447,7 +5447,7 @@ class SearchService {
 		}
 	}
 
-	/** A PDF's embedded text layer as page-anchored chunks (no OCR — scanned
+	/** A PDF's embedded text layer as page-anchored chunks (no OCR, scanned
 	 *  pages come back empty and simply aren't findable yet). Bounded so one
 	 *  giant PDF can't swallow the index. */
 	private async pdfChunks(f: TFile): Promise<Chunk[]> {
@@ -5480,7 +5480,7 @@ class SearchService {
 
 	/** Delete maintenance; a folder takes its whole subtree out of the index.
 	 *  A deleted image's text lingers in notes that embedded it until their
-	 *  next reindex — removing the embed edits the note, which triggers one. */
+	 *  next reindex, removing the embed edits the note, which triggers one. */
 	removePath(path: string, isFolder: boolean) {
 		let touched = false;
 		for (const p of Object.keys(this.store)) {
@@ -5499,7 +5499,7 @@ class SearchService {
 		if (touched) this.schedulePersist();
 	}
 
-	/** Rename maintenance. Cached text is reused — no re-reading — but docs are
+	/** Rename maintenance. Cached text is reused (no re-reading) but docs are
 	 *  re-added so titles and folder-name terms follow the new path. */
 	renameFile(f: TAbstractFile, oldPath: string) {
 		if (f instanceof TFolder) {
@@ -5613,7 +5613,7 @@ class SearchService {
 	}
 
 	/** Add a note to the index with its embedded images' OCR text attached live
-	 *  from the cache — attach text is derived at add time, never stored twice. */
+	 *  from the cache, attach text is derived at add time, never stored twice. */
 	private addNoteDoc(path: string, d: StoredDoc) {
 		const af = this.app.vault.getAbstractFileByPath(path);
 		const cache = af instanceof TFile ? this.app.metadataCache.getFileCache(af) : null;
@@ -5663,7 +5663,7 @@ class SearchService {
 	}
 
 	/** target path → the notes linking/embedding it, built in one pass over the
-	 *  metadata cache (never per image — 13k images times 5k notes won't fly). */
+	 *  metadata cache (never per image, 13k images times 5k notes won't fly). */
 	private reverseEmbeds(): Map<string, string[]> {
 		const rev = new Map<string, string[]>();
 		for (const [src, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
@@ -5787,7 +5787,7 @@ class SearchService {
 	/** The plugin-level search API: engine results ranked with everything Power
 	 *  Explorer knows (recency, pins, manual order, the section being browsed).
 	 *  The modal calls this, and other plugins (Power Capture's Ask-your-vault)
-	 *  can call it too — one index, one ranking. */
+	 *  can call it too, one index, one ranking. */
 	query(q: string, opts: { scope?: string; limit?: number } = {}): SearchHit[] {
 		return this.index.search(q, {
 			limit: opts.limit ?? 60,
@@ -5798,7 +5798,7 @@ class SearchService {
 
 	/** RAG-style retrieval over the shared index: top-k content chunks with
 	 *  full text, OR semantics (callers bring expanded synonym terms). Power
-	 *  Capture's Ask-your-vault uses this when Power Explorer is installed —
+	 *  Capture's Ask-your-vault uses this when Power Explorer is installed
 	 *  which means answers can draw on PDF pages and OCR'd screenshots too. */
 	retrieve(terms: string[], k = 12, scope = ""): { path: string; heading: string; text: string; score: number }[] {
 		if (!this.plugin.settings.searchEnabled) return [];
@@ -5845,7 +5845,7 @@ interface OpenTarget {
 }
 
 /**
- * Search everywhere — one box, instant word-prefix
+ * Search everywhere, one box, instant word-prefix
  * results grouped by section, title matches first, Enter opens the note at the
  * matching line. Scope chips (everywhere / notebook / section) stick across
  * uses. An empty query shows recent pages, so the modal is useful on arrival.
@@ -5888,7 +5888,7 @@ class PowerSearchModal extends Modal {
 			// a real switch: filled/right = titles only, hollow/left = snippets
 			setIcon(knob, on ? "toggle-right" : "toggle-left");
 			compactBtn.toggleClass("is-active", on);
-			compactBtn.setAttribute("aria-label", on ? "Titles only — click to show snippets" : "Showing snippets — click for titles only");
+			compactBtn.setAttribute("aria-label", on ? "Titles only (click to show snippets" : "Showing snippets) click for titles only");
 			this.modalEl.toggleClass("is-compact", on);
 		};
 		paintCompact();
@@ -6078,8 +6078,8 @@ class PowerSearchModal extends Modal {
 		// the two-tier split: matches in the page TITLE first, then matches in
 		// the body text. The label appears only when both exist, so a pure-title or
 		// pure-body result set stays clean. Ranking order is preserved in each.
-		// "In title" means the title is a real match for the query — every word
-		// is there, not just one coincidental one — so a single stray word like
+		// "In title" means the title is a real match for the query, every word
+		// is there, not just one coincidental one, so a single stray word like
 		// "Embedded" for "em dash" no longer floats junk above the real page.
 		const titleHits = hits.filter((h) => h.titleAll);
 		const textHits = hits.filter((h) => !h.titleAll);
@@ -6150,7 +6150,7 @@ class PowerSearchModal extends Modal {
 		});
 	}
 
-	/** Render text with the engine-computed [start, end) ranges highlighted —
+	/** Render text with the engine-computed [start, end) ranges highlighted
 	 *  titles and snippets light up through the same matcher, never two. */
 	private renderMarked(el: HTMLElement, text: string, ranges: [number, number][]) {
 		let at = 0;
@@ -6211,7 +6211,7 @@ class PowerSearchModal extends Modal {
 			void this.app.workspace.openLinkText(t.path, "", newTab); // a standalone image
 			return;
 		}
-		// notes — body hits AND image text attributed to a note — open at the line
+		// notes (body hits AND image text attributed to a note) open at the line
 		const f = this.app.vault.getAbstractFileByPath(t.path);
 		if (f instanceof TFile) {
 			const leaf = this.app.workspace.getLeaf(newTab);
@@ -6224,7 +6224,7 @@ class PowerSearchModal extends Modal {
 
 /** Asks before something that touches many files at once. Deleting has its own
  *  modal because it is always the same warning; this one carries whatever the
- *  caller needs to say, and its action button is not a warning button — these
+ *  caller needs to say, and its action button is not a warning button, these
  *  are things that add, not things that take away. */
 class ConfirmModal extends Modal {
 	constructor(
@@ -6376,7 +6376,7 @@ const POWER_APP_ORDER = ["Power Explorer", "Power Assistant", "Power Editor", "P
 const FAVORITES_TAB = "Favorites";
 
 /** Per-cell / per-row / per-item editing commands don't belong in a launcher of
- *  "open something" actions — drop them so only the app-level features surface. */
+ *  "open something" actions, drop them so only the app-level features surface. */
 const LAUNCHER_NOISE =
 	/\b(insert|move|delete|clear|duplicate|reset|paste|fill|prettify|verify|re-extract|autofit)\b|\b(rows?|columns?|cells?|borders?)\b|\b(above|below)\b|\bthis (note|table|base|meeting)\b|add or change|rename speakers|copy (summary|table)|export as/i;
 
@@ -6613,7 +6613,7 @@ class PowerLauncherModal extends Modal {
 	}
 
 	/** Move the dragged command relative to the target within whichever tab is
-	 *  active — the Favorites list or this app's own order — and persist it. */
+	 *  active (the Favorites list or this app's own order) and persist it. */
 	private commitReorder(draggedId: string, targetId: string, after: boolean) {
 		if (draggedId === targetId) return;
 		const ids =
@@ -6656,7 +6656,7 @@ class PowerLauncherModal extends Modal {
 	}
 }
 
-/** Pick a template's icon from a grid — a curated emoji shelf, the full Lucide
+/** Pick a template's icon from a grid, a curated emoji shelf, the full Lucide
  *  set (searchable), or an image imported from your computer. onPick gets the
  *  chosen value: an emoji, a Lucide name, a `[[wikilink]]` to the image, or ""
  *  to clear it. */
@@ -6740,7 +6740,7 @@ class IconPickerModal extends Modal {
 	}
 }
 
-/** Notion-style gallery for making a new page: a searchable set of cards —
+/** Notion-style gallery for making a new page: a searchable set of cards
  *  Blank page first, then every template note (icon, name, blurb, and a live
  *  content preview). Enter takes the highlighted card; ＋ New template seeds a
  *  fresh template note and opens it. onPick receives the chosen template (or
@@ -6775,7 +6775,7 @@ class PageTemplateGallery extends Modal {
 		const head = this.contentEl.createDiv({ cls: "pe-tpl-head" });
 		this.searchEl = head.createEl("input", {
 			cls: "pe-tpl-search",
-			attr: { type: "text", spellcheck: "false", placeholder: `Search templates — new page in ${where}` },
+			attr: { type: "text", spellcheck: "false", placeholder: `Search templates, new page in ${where}` },
 		});
 		const newBtn = head.createEl("button", { cls: "pe-tpl-new", text: "＋ New template" });
 		newBtn.addEventListener("click", () => {
@@ -7464,7 +7464,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 				);
 			help(
 				head,
-				"The app's buttons are recognised by their icon, never by their name, because names are translated. A button this cannot recognise is one it never touches, so an Obsidian update can only ever give you a button back (it can never hide or move the wrong one). Hidden buttons still work as commands and hotkeys; only the icon goes. Added commands run when clicked, so anything in the command palette can sit here, and one whose plugin is off simply does not draw until it returns."
+				"The app's buttons are recognized by their icon, never by their name, because names are translated. A button this cannot recognize is one it never touches, so an Obsidian update can only ever give you a button back (it can never hide or move the wrong one). Hidden buttons still work as commands and hotkeys; only the icon goes. Added commands run when clicked, so anything in the command palette can sit here, and one whose plugin is off simply does not draw until it returns."
 			);
 			head.addButton((b) =>
 				b.setButtonText("Add command").onClick(() => {
@@ -7586,12 +7586,12 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 				})
 			);
 		new Setting(c)
-			.setName("Colour notebooks automatically")
-			.setDesc("Give every notebook a cover colour from the palette instead of a grey outline.")
+			.setName("Color notebooks automatically")
+			.setDesc("Give every notebook a cover color from the palette instead of a gray outline.")
 			.then((s) =>
 				help(
 					s,
-					"Notebooks with no colour of their own walk the palette by position, so neighbours never match. A colour you pick yourself always wins and never moves; these follow the arrangement, so rearranging notebooks reshuffles them. Turn this off for plain outlines everywhere."
+					"Notebooks with no color of their own walk the palette by position, so neighbours never match. A color you pick yourself always wins and never moves; these follow the arrangement, so rearranging notebooks reshuffles them. Turn this off for plain outlines everywhere."
 				)
 			)
 			.addToggle((t) =>
@@ -7607,7 +7607,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			.setDesc(
 				hidden.length
 					? "Folders tucked out of the tree. Right-click any folder to hide it."
-					: "None yet. Right-click a folder and choose Hide folder — handy for attachment dumps."
+					: "None yet. Right-click a folder and choose Hide folder, handy for attachment dumps."
 			)
 			.then((s) =>
 				help(
@@ -7616,7 +7616,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 				)
 			);
 		// A folder renamed or moved outside the plugin (filesystem, Sync, or while
-		// it was off) leaves its old path stranded here. Offer a one-click sweep —
+		// it was off) leaves its old path stranded here. Offer a one-click sweep
 		// user-initiated, so it can't fight a Sync catch-up the way an auto-prune would.
 		if (missing.length) {
 			hiddenSetting.addButton((b) =>
@@ -7856,7 +7856,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			.then((s) =>
 				help(
 					s,
-					"Word-prefix matching (type 'budg', find 'budget'), with results grouped by section. Open it with the 'Search everywhere' command — bind a hotkey like Ctrl+E to make it muscle memory. The index updates as you edit and is cached in the plugin folder."
+					"Word-prefix matching (type 'budg', find 'budget'), with results grouped by section. Open it with the 'Search everywhere' command, bind a hotkey like Ctrl+E to make it muscle memory. The index updates as you edit and is cached in the plugin folder."
 				)
 			)
 			.addToggle((t) =>
@@ -7904,7 +7904,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			.then((s) =>
 				help(
 					s,
-					'The OCR runs through the free "Text Extractor" community plugin — install and enable it once. Each image is read in the background exactly once and cached; a search hit opens the note embedding the image, right at its spot.'
+					'The OCR runs through the free "Text Extractor" community plugin, install and enable it once. Each image is read in the background exactly once and cached; a search hit opens the note embedding the image, right at its spot.'
 				)
 			)
 			.addToggle((t) =>
@@ -7921,7 +7921,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			.then((s) =>
 				help(
 					s,
-					"Good for attachment dumps, archives, or template folders you never want surfacing in results. Changes re-index after a short pause. This is separate from hiding a folder — a hidden folder is still searchable unless you list it here too."
+					"Good for attachment dumps, archives, or template folders you never want surfacing in results. Changes re-index after a short pause. This is separate from hiding a folder, a hidden folder is still searchable unless you list it here too."
 				)
 			)
 			.addText((t) =>

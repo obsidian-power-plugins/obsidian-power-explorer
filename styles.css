@@ -1,5 +1,5 @@
 /* Power Explorer: drag-to-reorder visuals. Everything is a single fixed
-   element moved with the pointer — nothing is injected per tree item. */
+   element moved with the pointer, nothing is injected per tree item. */
 
 .pe-ghost {
 	position: fixed;
@@ -44,7 +44,7 @@
 }
 
 /* notebook, section, drill-folder and page-group rows highlight as move-into
-   targets — a group row is a folder wearing a page's name, and takes drops */
+   targets, a group row is a folder wearing a page's name, and takes drops */
 .pe-notebook.pe-into,
 .pe-drill-folder.pe-into,
 .pe-page.pe-into {
@@ -124,7 +124,7 @@ body.pe-dragging .nav-files-container {
 }
 
 /* While the sections layout is on, the tree shows folders and their pages
-   move to the right pane — but files that live at the vault ROOT have no
+   move to the right pane, but files that live at the vault ROOT have no
    folder to open them from, so keep those visible in the tree (only hide
    files nested inside a folder). */
 .pe-sections .nav-files-container .nav-folder-children .nav-file {
@@ -436,7 +436,7 @@ body.is-mobile .pe-divider {
    element is also a tab header, and a tab header paints its own background with
    a rule that outranks the header button's, so mod-raised drew the ring and lost
    the middle. Same variable the settings button fills with, at a weight that
-   wins — three classes deep, which is what it takes to beat the app's own
+   wins, three classes deep, which is what it takes to beat the app's own
    chrome. */
 body.pe-phone-drawer-menu .workspace-drawer-header .workspace-tab-header.workspace-drawer-tab-select.mod-raised {
 	background-color: var(--background-primary);
