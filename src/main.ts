@@ -1,4 +1,4 @@
-import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
+import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type SettingDefinitionItem, type SettingDefinitionPage, type SettingDefinitionRender, TAbstractFile, TFile, TFolder, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
 import { Chunk, ChunkKind, MAX_CHUNK, SearchHit, VaultIndex, chunkNote, editorMatchRanges } from "./search";
@@ -7148,19 +7148,33 @@ class DrawerCommandPicker extends FuzzySuggestModal<{ id: string; name: string }
 	}
 }
 
+/** One row of the settings tab. `build` is handed a Setting whose name and
+ *  description are already set, so it only adds the controls and any richer
+ *  description content. Rows are data rather than drawing code so the two
+ *  renderers below cannot disagree about what the tab holds. */
+type Row = { name: string; desc?: string; help?: string; aliases?: string[]; build?: (s: Setting) => void | (() => void) };
+
+/** One section: a native settings page on Obsidian 1.13 and up, a tab in the
+ *  fallback renderer for older builds. */
+type Page = { id: string; label: string; rows: Row[] };
+
 class PowerExplorerSettingTab extends PluginSettingTab {
 	constructor(private plugin: PowerExplorerPlugin) {
 		super(plugin.app, plugin);
 	}
 
-	/** Kept across re-renders so a self-triggered this.display() (removing a hidden
-	 *  folder, adding a template) leaves you on the same tab with your search intact. */
+	/** Kept across re-renders so a self-triggered redraw (removing a hidden folder,
+	 *  adding a template) leaves you on the same tab with your search intact. Both
+	 *  belong to the fallback renderer; 1.13 has a page stack and a search of its own. */
 	private activeTab = "layout";
 	private query = "";
 	private helpEl: HTMLElement | null = null;
 	private helpAnchor: HTMLElement | null = null;
 	private helpPinned = false;
 	private helpCleanup: (() => void) | null = null;
+	/** Re-indexing is expensive, so the exclude list waits for a pause in typing.
+	 *  Kept on the tab, not in a render closure, so a redraw mid-edit still cancels. */
+	private excludeTimer: number | null = null;
 
 	private closeHelp() {
 		this.helpCleanup?.();
@@ -7206,18 +7220,132 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		};
 	}
 
+	/** Redraw when the rows themselves change: a template added, a folder
+	 *  unhidden, a toolbar button removed. Obsidian 1.13 rebuilds the tab from
+	 *  getSettingDefinitions(); older builds have only the fallback renderer. */
+	private refresh() {
+		this.closeHelp(); // whatever the popover is anchored to is about to go
+		// update() arrived with the declarative API in 1.13 and minAppVersion is
+		// still 1.8.7, so it is reached through a cast rather than named outright:
+		// an older build has no definitions to rebuild from and redraws instead.
+		const tab = this as unknown as { update?: () => void };
+		if (tab.update) tab.update();
+		else this.renderFallback();
+	}
+
+	/** A small help icon after the setting name carrying the deeper "what does
+	 *  this actually do" explanation; hover shows it, a click pins it open so
+	 *  the one-line description stays scannable. No aria-label: Obsidian would
+	 *  double it up with its own native black tooltip. */
+	private addHelp(st: Setting, text: string) {
+		const ic = st.nameEl.createSpan({ cls: "pe-setting-help" });
+		setIcon(ic, "help-circle");
+		ic.addEventListener("mouseenter", () => this.openHelp(ic, text, false));
+		ic.addEventListener("mouseleave", () => {
+			if (!this.helpPinned && this.helpAnchor === ic) this.closeHelp();
+		});
+		ic.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (this.helpPinned && this.helpAnchor === ic) this.closeHelp();
+			else this.openHelp(ic, text, true);
+		});
+	}
+
+	/** Obsidian 1.13 and up builds the tab from these and never calls display():
+	 *  one native page per section, standing in for the tab bar the fallback
+	 *  draws for older builds.
+	 *
+	 *  Every row renders itself rather than declaring a `control`. These settings
+	 *  do more than store a value (they re-register commands, re-sort the tree,
+	 *  rewrite the toolbar), so they have to stay on the plugin's own save path;
+	 *  a declarative control would write through Obsidian's generic one instead
+	 *  and skip all of that. */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		const pages = this.buildPages();
+		const rowsOf = new Map(pages.map((p) => [p.label, p.rows] as const));
+		return [
+			{
+				name: "",
+				searchable: false, // it is a masthead, not a setting
+				render: (s) => {
+					s.settingEl.empty();
+					this.renderAbout(s.settingEl);
+				},
+			},
+			{
+				type: "group",
+				search: {
+					placeholder: "Search settings...",
+					// the entries here are whole sections, so a section stays up when
+					// anything inside it matches. Obsidian's own search box, top left,
+					// reaches the individual settings.
+					match: (def, query) => {
+						const q = query.trim().toLowerCase();
+						if (!q) return true;
+						const has = (s: string | undefined) => (s ?? "").toLowerCase().includes(q);
+						return (rowsOf.get(def.name) ?? []).some(
+							(r) => has(r.name) || has(r.desc) || (r.aliases ?? []).some(has)
+						);
+					},
+				},
+				items: pages.map(
+					(p): SettingDefinitionPage => ({
+						type: "page",
+						name: p.label,
+						items: p.rows.map(
+							(r): SettingDefinitionRender => ({
+								name: r.name,
+								desc: r.desc,
+								// searching the section name still finds its rows, the way
+								// a heading match opened the whole section in the tab bar
+								aliases: [...(r.aliases ?? []), p.label],
+								render: (s) => {
+									// the name and description are Obsidian's to draw and it
+									// rebuilds both on a redraw, so a row only hands back what
+									// it hung on the row element itself
+									const teardown = r.build?.(s);
+									if (r.help) this.addHelp(s, r.help);
+									return teardown;
+								},
+							})
+						),
+					})
+				),
+			},
+		];
+	}
+
+	/** What this plugin is and which build is running, above the section list.
+	 *  Read off the manifest so it cannot drift from the released version. */
+	private renderAbout(el: HTMLElement) {
+		el.addClass("pe-about");
+		const head = el.createDiv({ cls: "pe-about-head" });
+		head.createSpan({ cls: "pe-about-name", text: this.plugin.manifest.name });
+		head.createSpan({ cls: "pe-about-version", text: "v" + this.plugin.manifest.version });
+		el.createDiv({ cls: "pe-about-desc", text: this.plugin.manifest.description });
+	}
+
+	/** The pre-1.13 renderer: every section on one page, with a tab bar and a
+	 *  search box of our own because there was no declarative API to hand the
+	 *  work to. Obsidian 1.13 and up ignores this and renders the definitions
+	 *  above instead, so the two only ever differ in how they draw, never in
+	 *  what they draw. */
 	display() {
+		this.renderFallback();
+	}
+
+	private renderFallback() {
 		const root = this.containerEl;
 		root.empty();
 		this.closeHelp(); // a re-render orphans any popover anchored to the old DOM
 
-		const TABS: { id: string; label: string }[] = [
-			{ id: "layout", label: "Layout" },
-			{ id: "ordering", label: "Ordering" },
-			{ id: "templates", label: "Templates" },
-			{ id: "search", label: "Search" },
-		];
-		if (!TABS.some((t) => t.id === this.activeTab)) this.activeTab = TABS[0].id;
+		const pages = this.buildPages();
+		if (!pages.some((p) => p.id === this.activeTab)) this.activeTab = pages[0].id;
+
+		// the same masthead the declarative tab shows, minus the setting-item
+		// wrapper it gets there
+		this.renderAbout(root.createDiv({ cls: "pe-about-standalone" }));
 
 		const searchWrap = root.createDiv({ cls: "pe-settings-search" });
 		const searchInput = searchWrap.createEl("input", { cls: "pe-settings-search-input" });
@@ -7228,727 +7356,24 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		const tabBar = root.createDiv({ cls: "pe-settings-tabs" });
 		const body = root.createDiv({ cls: "pe-settings-body" });
 
-		// each heading opens a section div tagged with its tab; the settings that
-		// follow render into it because c points at the current section. Add new
-		// settings through section(), never a bare setHeading(), or they escape the tabs.
-		let c: HTMLElement = body;
-		const section = (name: string, tab: string) => {
-			c = body.createDiv({ cls: "pe-settings-section" });
-			c.dataset.tab = tab;
-			c.dataset.name = name.toLowerCase();
-			new Setting(c).setName(name).setHeading();
-		};
-
-		// a small help icon after the setting name carrying the deeper "what does
-		// this actually do" explanation; hover shows it, a click pins it open so
-		// the one-line description stays scannable. No aria-label: Obsidian would
-		// double it up with its own native black tooltip.
-		const help = (st: Setting, text: string) => {
-			const ic = st.nameEl.createSpan({ cls: "pe-setting-help" });
-			setIcon(ic, "help-circle");
-			ic.addEventListener("mouseenter", () => this.openHelp(ic, text, false));
-			ic.addEventListener("mouseleave", () => {
-				if (!this.helpPinned && this.helpAnchor === ic) this.closeHelp();
-			});
-			ic.addEventListener("click", (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				if (this.helpPinned && this.helpAnchor === ic) this.closeHelp();
-				else this.openHelp(ic, text, true);
-			});
-		};
-
-		section("Layout", "layout");
-		const layoutSetting = new Setting(c).setName("Desktop layout");
-		help(
-			layoutSetting,
-			"Not sure which to pick? Notebooks and sections is the OneNote-style two-level view most people want. Full folder tree stays closest to vanilla Obsidian, just inside the two-pane split. Phones ignore this and always use Drill (except on Obsidian default)."
-		);
-		layoutSetting.descEl.createDiv({
-			text: "How the Files pane looks on desktop. Phones use Drill for every option except Obsidian default. The non-default options use a two-pane split (folders on the left, the selected folder's pages on the right). Drag the divider to resize.",
-		});
-		const layoutList = layoutSetting.descEl.createEl("ul", { cls: "pe-setting-list" });
-		const layoutItem = (name: string, text: string) => {
-			const li = layoutList.createEl("li");
-			li.createEl("strong", { text: name });
-			li.createSpan({ text: ": " + text });
-		};
-		layoutItem("Obsidian default", "the normal single-pane file explorer, untouched.");
-		layoutItem("Full folder tree", "Obsidian's own nested tree on the left, every level.");
-		layoutItem("Notebooks only", "just your top-level folders; the right pane drills everything below.");
-		layoutItem("Notebooks and sections", "your top folders plus their immediate subfolders (two fixed levels); anything deeper opens on the right.");
-		layoutItem("Drill", "one level at a time, everywhere.");
-		layoutSetting.descEl.createDiv({
-			cls: "pe-setting-note",
-			text: "On a vault only two levels deep, Full folder tree and Notebooks and sections look alike; the difference shows once folders nest three or more levels.",
-		});
-		layoutSetting.addDropdown((d) =>
-			d
-				.addOptions({
-					default: "Obsidian default",
-					tree: "Full folder tree",
-					notebooks: "Notebooks only",
-					onenote: "Notebooks and sections",
-					drill: "Drill (one level at a time)",
-				})
-				.setValue(this.plugin.settings.sectionsLayout ? this.plugin.settings.desktopPane : "default")
-				.onChange((v) => this.plugin.setLayout(v as "default" | PaneMode))
-		);
-		new Setting(c)
-			.setName("Recent Pages")
-			.setDesc("Pin a list of your last-opened notes above the folder tree.")
-			.then((s) =>
-				help(
-					s,
-					"Recency is tracked whether this is on or off, so the list is already warm the moment you enable it. Click any entry to jump straight back to that note."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.showRecent).onChange((v) => {
-					this.plugin.settings.showRecent = v;
-					void this.plugin.persistSettings();
-					this.plugin.reapplySections();
-				})
-			);
-		new Setting(c)
-			.setName("Power Desk borrows the pages pane")
-			.setDesc("A calendar or inbox tab is not a page: while one is active, the pages panel hides and the sidebar narrows so the view gets the width. Click the folder panel to bring the pages back.")
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.deskSolo).onChange((v) => {
-					this.plugin.settings.deskSolo = v;
-					void this.plugin.persistSettings();
-					if (!v) this.plugin.exitDeskSolo();
-				})
-			);
-		new Setting(c)
-			.setName("Hide explorer buttons on phones")
-			.setDesc("On phones, hide Obsidian's own explorer buttons while the drill view is up.")
-			.then((s) =>
-				help(
-					s,
-					"The drill view has its own New page button, so Obsidian's new-note, new-folder, sort, and collapse buttons are redundant there. Turn this off to keep them. Desktop is never affected."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.hidePhoneActions).onChange((v) => this.plugin.setHidePhoneActions(v))
-			);
-		new Setting(c)
-			.setName("A folder's own note makes it a page")
-			.setDesc("A note named after the folder it sits in turns that folder into an expandable page instead of a plain folder.")
-			.then((s) =>
-				help(
-					s,
-					"Obsidian gives this shape no meaning of its own, so it is a choice. On, a folder holding a note of the same name becomes an expandable page anchored by that note, which suits a vault that uses such notes as covers. Off, the folder stays a folder you step into and the note is just a page inside it, which suits a vault where naming a page after its folder is only a habit. Either way this leaves alone the other shape, a note sitting BESIDE a folder of the same name, which stays an expandable page with its subpages."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.folderNoteGroups).onChange((v) => {
-					this.plugin.settings.folderNoteGroups = v;
-					void this.plugin.persistSettings();
-					this.plugin.orderChanged();
-				})
-			);
-		new Setting(c)
-			.setName("Phone: drawer tabs as a menu button")
-			.setDesc("Fold the Files tab row into a menu button beside the vault settings, giving that row back to the folder list.")
-			.then((s) =>
-				help(
-					s,
-					"Phones only, and off unless you ask. Obsidian already collapses these tabs into a menu that flies open on tap; it just spends a whole row on the trigger. That trigger moves up beside the settings gear, and its menu still lists Files, Bookmarks and the rest. Search in that menu opens this plugin's search, which reaches the whole vault rather than a pane. Nothing is hidden unless the move works, and everything goes back when this is turned off."
-				)
-			)
-			.addToggle((t) => t.setValue(this.plugin.settings.phoneDrawerMenu).onChange((v) => this.plugin.setPhoneDrawerMenu(v)));
-		new Setting(c)
-			.setName("Phone: drawer menu entries")
-			.setDesc("Choose what the drawer's switcher menu lists: hide built-in entries you never open, and add commands you want in reach.")
-			.then((s) =>
-				help(
-					s,
-					"The menu behind the drawer's tab switcher (Files, Search, Tags and the rest). Hiding an entry only takes it off this menu; its view keeps working and returns the moment the toggle goes back on. Added commands run when tapped, so anything from the command palette can sit here (the Power apps launcher, Ask your vault, a daily note). The same menu is shaped whether or not it is folded into a header button, and desktop is never affected."
-				)
-			)
-			.addButton((b) =>
-				b.setButtonText("Add command").onClick(() => {
-					new DrawerCommandPicker(this.plugin, (id) => {
-						this.plugin.settings.drawerMenuCommands.push(id);
-						void this.plugin.persistSettings();
-						this.plugin.applyDrawerMenuItems();
-						this.display();
-					}).open();
-				})
-			);
-		// The live drawer knows its menu best, so its rows are listed when one is
-		// up (order, labels, and any entries other plugins added); the stock five
-		// are the floor so a desktop settings screen still shows the toggles.
-		const natives: { type: string; label: string }[] = [];
-		document
-			.querySelectorAll(".workspace-drawer.mod-left .workspace-drawer-tab-options-list > .workspace-tab-header:not(.pe-drawer-cmd)")
-			.forEach((el) => {
-				if (!el.instanceOf(HTMLElement)) return;
-				const type = el.dataset.type ?? "";
-				const label = el.querySelector(".workspace-tab-header-inner-title")?.textContent?.trim() ?? "";
-				if (type && label && !natives.some((n) => n.type === type)) natives.push({ type, label });
-			});
-		for (const it of DRAWER_NATIVE_ITEMS) if (!natives.some((n) => n.type === it.type)) natives.push(it);
-		for (const it of natives) {
-			new Setting(c).setName(it.label).addToggle((t) =>
-				t.setValue(!this.plugin.settings.drawerMenuHidden.includes(it.type)).onChange((v) => {
-					const set = new Set(this.plugin.settings.drawerMenuHidden);
-					if (v) set.delete(it.type);
-					else set.add(it.type);
-					this.plugin.settings.drawerMenuHidden = [...set];
-					void this.plugin.persistSettings();
-					this.plugin.applyDrawerMenuItems();
-				})
-			);
-		}
-		const menuCmds = this.plugin.settings.drawerMenuCommands;
-		const cmdReg = (this.plugin.app as unknown as { commands: CommandRegistry }).commands;
-		menuCmds.forEach((id, i) => {
-			const cmd = cmdReg.commands[id];
-			const row = new Setting(c).setName(cmd ? cmd.name : id);
-			if (!cmd) row.setDesc("Not available right now (its plugin may be off).");
-			const move = (from: number, to: number) => {
-				[menuCmds[from], menuCmds[to]] = [menuCmds[to], menuCmds[from]];
-				void this.plugin.persistSettings();
-				this.plugin.applyDrawerMenuItems();
-				this.display();
-			};
-			row.addExtraButton((b) => b.setIcon("chevron-up").setTooltip("Move up").setDisabled(i === 0).onClick(() => move(i, i - 1)));
-			row.addExtraButton((b) =>
-				b
-					.setIcon("chevron-down")
-					.setTooltip("Move down")
-					.setDisabled(i === menuCmds.length - 1)
-					.onClick(() => move(i, i + 1))
-			);
-			row.addExtraButton((b) =>
-				b
-					.setIcon("x")
-					.setTooltip("Remove")
-					.onClick(() => {
-						menuCmds.splice(i, 1);
-						void this.plugin.persistSettings();
-						this.plugin.applyDrawerMenuItems();
-						this.display();
-					})
-			);
-		});
-		new Setting(c)
-			.setName("Phone: navigation actions in the header")
-			.setDesc("Move search, new tab, the tab switcher and the menu up into the note's header, and hide the bar at the bottom of the screen.")
-			.then((s) =>
-				help(
-					s,
-					"Phones only, and off unless you ask, because it borrows Obsidian's own buttons rather than copying them: the tab switcher carries a live count, so it has to be the real thing. They are handed straight back when this is turned off or the plugin is disabled. Nothing is hidden until the move has actually worked, so if an Obsidian update renames those buttons you lose this tidier header, never the buttons themselves. Back and forward are not moved: the header already has its own pair."
-				)
-			)
-			.addToggle((t) => t.setValue(this.plugin.settings.phoneTopActions).onChange((v) => this.plugin.setPhoneTopActions(v)));
-		new Setting(c)
-			.setName("Actions in the explorer toolbar")
-			.setDesc("Put Search everywhere, New page, and the Power apps launcher in the file explorer's toolbar instead of the ribbon.")
-			.then((s) =>
-				help(
-					s,
-					"For a short ribbon. The same three actions either way, just somewhere else: in the toolbar they sit beside the folder buttons they mostly concern, rather than in a strip shared with every other plugin. This moves only this plugin's icons. To thin out the rest, right-click the ribbon and untick what you do not want, which works for every icon including Obsidian's own."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.actionsInExplorerBar).onChange((v) => {
-					this.plugin.settings.actionsInExplorerBar = v;
-					void this.plugin.persistSettings();
-					this.plugin.applyActionHome();
-				})
-			);
-		// One row per button actually in the toolbar right now, read from the pane
-		// rather than from a list kept here: whatever Obsidian puts there (and
-		// whatever a future version adds) is offered, and nothing is offered that
-		// is not really there.
-		{
-			const inv = this.plugin.barInventory();
-			const head = new Setting(c)
-				.setName("Buttons in the explorer toolbar")
-				.setDesc(
-					inv.length
-						? "Add any command, turn off the ones you do not use, and put them in the order you want. Obsidian's own buttons are included."
-						: "Open the file explorer pane, then come back here and its buttons will be listed."
-				);
-			help(
-				head,
-				"The app's buttons are recognized by their icon, never by their name, because names are translated. A button this cannot recognize is one it never touches, so an Obsidian update can only ever give you a button back (it can never hide or move the wrong one). Hidden buttons still work as commands and hotkeys; only the icon goes. Added commands run when clicked, so anything in the command palette can sit here, and one whose plugin is off simply does not draw until it returns."
-			);
-			head.addButton((b) =>
-				b.setButtonText("Add command").onClick(() => {
-					new BarCommandPicker(this.plugin, (id) => {
-						this.plugin.addBarCommand(id);
-						this.display();
-					}).open();
-				})
-			);
-			if (inv.length) {
-				head.addExtraButton((b) =>
-					b
-						.setIcon("rotate-ccw")
-						.setTooltip("Back to the default toolbar")
-						.onClick(() => {
-							this.plugin.resetBar();
-							this.display();
-						})
-				);
-			}
-			// Rows live in a container of their own so the order can be read straight
-			// back off the DOM after a drag, with no index bookkeeping to drift.
-			const list = c.createDiv({ cls: "pe-bar-list" });
-			const commit = () => {
-				const keys = (Array.from(list.children) as HTMLElement[])
-					.map((n) => n.dataset.peKey ?? "")
-					.filter(Boolean);
-				this.plugin.setBarOrder(keys);
-			};
-			for (const b of inv) {
-				const row = new Setting(list).setClass("pe-sub-setting").setName(b.label);
-				const el = row.settingEl;
-				el.dataset.peKey = b.key;
-				if (b.missing) row.setDesc("Not available right now (its plugin may be off).");
-				// The grip arms the drag and disarms it after, so a press anywhere
-				// else on the row (a switch, the remove button) still behaves like a
-				// press. Dragging the whole row otherwise starts from the toggle.
-				const grip = createDiv({ cls: "pe-bar-grip", attr: { "aria-label": "Drag to reorder" } });
-				setIcon(grip, "grip-vertical");
-				el.prepend(grip);
-				grip.addEventListener("pointerdown", () => (el.draggable = true));
-				el.addEventListener("dragstart", (ev) => {
-					el.addClass("is-dragging");
-					ev.dataTransfer?.setData("text/plain", b.key); // Firefox starts no drag without payload
-					if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
-				});
-				el.addEventListener("dragend", () => {
-					el.removeClass("is-dragging");
-					el.draggable = false;
-					commit();
-				});
-				el.addEventListener("dragover", (ev) => {
-					ev.preventDefault();
-					const moving = list.querySelector<HTMLElement>(".is-dragging");
-					if (!moving || moving === el) return;
-					// past the halfway line it goes below this row, which is the
-					// gesture reading you expect from every other list
-					const r = el.getBoundingClientRect();
-					list.insertBefore(moving, ev.clientY > r.top + r.height / 2 ? el.nextSibling : el);
-				});
-				// a command you added is removed outright; a button the app owns can
-				// only be hidden, because taking it off the list would take its
-				// switch with it
-				if (b.key.startsWith("cmd:")) {
-					const id = b.key.slice(4);
-					row.addExtraButton((x) =>
-						x
-							.setIcon(this.plugin.commandIcon(id))
-							.setTooltip("Choose an icon")
-							.onClick(() => {
-								new IconPickerModal(this.plugin, this.plugin.commandIcon(id), (v) => {
-									this.plugin.setBarIcon(id, v);
-									this.display();
-								}).open();
-							})
-					);
-					row.addExtraButton((x) =>
-						x
-							.setIcon("x")
-							.setTooltip("Remove")
-							.onClick(() => {
-								this.plugin.removeBarCommand(id);
-								this.display();
-							})
-					);
-				} else {
-					row.addToggle((t) =>
-						t
-							.setValue(!this.plugin.settings.explorerBarHidden.includes(b.key))
-							.onChange((v) => this.plugin.setBarHidden(b.key, !v))
-					);
-				}
+		// one section div per page, tagged with its tab so the tab bar and the
+		// search box below can show and hide whole sections at a time
+		for (const p of pages) {
+			const sec = body.createDiv({ cls: "pe-settings-section" });
+			sec.dataset.tab = p.id;
+			sec.dataset.name = p.label.toLowerCase();
+			new Setting(sec).setName(p.label).setHeading();
+			// name and description first, then the row's own content: the same
+			// order Obsidian applies a definition in, so a row that appends to
+			// either element lands in the same place under both renderers
+			for (const r of p.rows) {
+				const st = new Setting(sec).setName(r.name);
+				if (r.desc) st.setDesc(r.desc);
+				if (r.aliases?.length) st.settingEl.dataset.peAlias = r.aliases.join(" ").toLowerCase();
+				r.build?.(st);
+				if (r.help) this.addHelp(st, r.help);
 			}
 		}
-		new Setting(c)
-			.setName("Always edit")
-			.setDesc("Keep notes in editing view, and hide the header button that switches to reading view.")
-			.then((s) =>
-				help(
-					s,
-					"For anyone who treats their vault like a notebook and never reads a note read-only. Obsidian's own 'Default view for new tabs' covers only notes it opens fresh; a note reopened from a saved workspace, or one whose frontmatter asks for reading view, still lands read-only. This turns those back and takes the button off the header so it cannot be hit by accident. Nothing stops you toggling reading view from the command palette."
-				)
-			)
-			.addToggle((t) => t.setValue(this.plugin.settings.alwaysEdit).onChange((v) => this.plugin.setAlwaysEdit(v)));
-		new Setting(c)
-			.setName("Full-width navigation on phones")
-			.setDesc("Let the navigation drawer take the whole screen instead of leaving a slice of the note beside it.")
-			.then((s) =>
-				help(
-					s,
-					"Obsidian leaves a strip of the note showing next to the open drawer so you can tap it to dismiss. When the drawer is your navigator that strip is just lost width, so this takes the full screen and you close it with the back gesture or the sidebar button instead. Phones only; desktop is never affected."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.phoneWideNav).onChange((v) => {
-					this.plugin.settings.phoneWideNav = v;
-					document.body.toggleClass("pe-wide-nav", v);
-					void this.plugin.persistSettings();
-				})
-			);
-		new Setting(c)
-			.setName("Color notebooks automatically")
-			.setDesc("Give every notebook a cover color from the palette instead of a gray outline.")
-			.then((s) =>
-				help(
-					s,
-					"Notebooks with no color of their own walk the palette by position, so neighbours never match. A color you pick yourself always wins and never moves; these follow the arrangement, so rearranging notebooks reshuffles them. Turn this off for plain outlines everywhere."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.autoNotebookColors).onChange((v) => {
-					this.plugin.settings.autoNotebookColors = v;
-					this.plugin.orderChanged(); // saves, then repaints the trees and pages
-				})
-			);
-		const hidden = this.plugin.settings.hidden;
-		const missing = hidden.filter((p) => !(this.plugin.app.vault.getAbstractFileByPath(p) instanceof TFolder));
-		const hiddenSetting = new Setting(c)
-			.setName("Hidden folders")
-			.setDesc(
-				hidden.length
-					? "Folders tucked out of the tree. Right-click any folder to hide it."
-					: "None yet. Right-click a folder and choose Hide folder, handy for attachment dumps."
-			)
-			.then((s) =>
-				help(
-					s,
-					"A hidden folder disappears from the explorer tree, but its notes still turn up in search (add it to 'Folders search skips' too if you want it fully out). Use the eye button in the pages pane for a quick temporary peek, or the Show/hide hidden folders command."
-				)
-			);
-		// A folder renamed or moved outside the plugin (filesystem, Sync, or while
-		// it was off) leaves its old path stranded here. Offer a one-click sweep
-		// user-initiated, so it can't fight a Sync catch-up the way an auto-prune would.
-		if (missing.length) {
-			hiddenSetting.addButton((b) =>
-				b
-					.setButtonText(`Remove ${missing.length} missing`)
-					.setTooltip("Clear entries whose folder no longer exists")
-					.onClick(() => {
-						const n = this.plugin.removeMissingHidden();
-						new Notice(`Cleared ${n} stale hidden-folder entr${n === 1 ? "y" : "ies"}.`);
-						this.display();
-					})
-			);
-		}
-		for (const p of hidden) {
-			const gone = !(this.plugin.app.vault.getAbstractFileByPath(p) instanceof TFolder);
-			const row = new Setting(c).setName(p);
-			if (gone) row.setDesc("Folder no longer exists (safe to remove).");
-			row.addButton((b) =>
-				b.setButtonText(gone ? "Remove" : "Unhide").onClick(() => {
-					this.plugin.unhidePath(p);
-					this.display();
-				})
-			);
-		}
-
-		section("Ordering", "ordering");
-		new Setting(c)
-			.setName("Drag to reorder")
-			.setDesc("Drag items in the file explorer to arrange them by hand.")
-			.then((s) =>
-				help(
-					s,
-					"Drop between two items to set the order; drop onto a folder to move the item inside it. Folders you never arrange keep Obsidian's normal sort. This is Power Explorer's founding feature."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.dragEnabled).onChange((v) => {
-					this.plugin.settings.dragEnabled = v;
-					void this.plugin.persistSettings();
-				})
-			);
-		new Setting(c)
-			.setName("Unarranged items go")
-			.setDesc("Where new or never-dragged items land in an arranged folder.")
-			.then((s) =>
-				help(
-					s,
-					"In a folder you've hand-ordered, brand-new notes (and any you've never dragged) collect together at the top or the bottom, keeping Obsidian's own sort among themselves instead of scattering through your arrangement."
-				)
-			)
-			.addDropdown((d) =>
-				d
-					.addOptions({ bottom: "Bottom", top: "Top" })
-					.setValue(this.plugin.settings.unranked)
-					.onChange((v) => {
-						this.plugin.settings.unranked = v as "top" | "bottom";
-						void this.plugin.persistSettings();
-						this.plugin.orderChanged();
-					})
-			);
-		const count = Object.keys(this.plugin.settings.orders).length;
-		new Setting(c)
-			.setName("Manually arranged folders")
-			.setDesc(`${count} folder${count === 1 ? "" : "s"} currently carry a manual order.`)
-			.then((s) =>
-				help(
-					s,
-					"Each of these folders remembers a hand-set order. Reset a single folder from its right-click menu ('Reset manual order'), or wipe every folder's order at once with Clear all."
-				)
-			)
-			.addButton((b) =>
-				b.setButtonText("Clear all").onClick(() => {
-					this.plugin.settings.orders = {};
-					this.plugin.orderChanged();
-					this.display();
-					new Notice("All manual orders cleared.");
-				})
-			);
-		const forced = Object.keys(this.plugin.settings.folderSort);
-		new Setting(c)
-			.setName("Folders that sort themselves")
-			.setDesc(
-				forced.length
-					? `Sorting by name, not by hand: ${forced.map((p) => nameOf(p) || p).join(", ")}.`
-					: "None. Right-click any folder and pick Sort to keep it filed by name."
-			)
-			.then((s) =>
-				help(
-					s,
-					"Set one folder to sort itself with its right-click Sort menu. Handy for folders other tools keep adding to, like People, where a new note should file itself alphabetically instead of landing at the end. Dragging is off in these folders, but their hand-set order is kept and comes back if you switch that folder to Manual."
-				)
-			)
-			.addButton((b) =>
-				b
-					.setButtonText("Reset all to manual")
-					.setDisabled(!forced.length)
-					.onClick(() => {
-						this.plugin.settings.folderSort = {};
-						this.plugin.orderChanged();
-						this.display();
-						new Notice("Every folder follows manual order again.");
-					})
-			);
-
-		section("Templates", "templates");
-		new Setting(c)
-			.setName("Templates folder")
-			.setDesc("The folder whose notes fill the New-page gallery.")
-			.then((s) =>
-				help(
-					s,
-					"The + button in the pages pane opens a gallery of these notes as templates. A template note is configured by its own properties: 'icon' (an emoji or a Lucide icon name) and 'description' set its gallery card, 'filename' names the pages it makes, 'folders' lists where it is offered, 'destination' files its pages in one folder wherever you press +, and 'unique: day' opens today's page instead of making a second one. None of them are copied into the pages themselves. Every template also gets its own command, so the ones you use daily can take a hotkey. Leave this empty and Power Explorer falls back to a top-level \"Templates\" folder if you have one."
-				)
-			)
-			.addText((t) =>
-				t
-					.setPlaceholder("Templates")
-					.setValue(this.plugin.settings.templatesFolder)
-					.onChange((v) => {
-						this.plugin.settings.templatesFolder = v.trim();
-						void this.plugin.persistSettings();
-						// Point this somewhere else and the per-template commands
-						// follow, rather than describing the old folder until restart.
-						this.plugin.syncTemplateCommands();
-					})
-			)
-			.addButton((b) =>
-				b
-					.setButtonText("New template")
-					.setCta()
-					.onClick(async () => {
-						await this.plugin.newTemplate();
-						this.display();
-					})
-			);
-		new Setting(c)
-			.setName("Page name")
-			.setDesc("How pages are named when their template says nothing. {{date}} = today, {{name:Text}} = the part you type over. Empty names them Untitled.")
-			.then((s) =>
-				help(
-					s,
-					"A template names its own pages with a 'filename' property; this is the fallback for the ones that do not. The tokens are {{date}} and {{time}} (both take a format, as in {{date:YYYY-MM}}, and an offset, as in {{date+1d}} or {{date-1w:dddd}}), {{folder}}, {{parent}}, {{vault}}, and {{name:Text}} for the generic part you mean to replace, which is preselected when the page opens so you can type straight over it. In a template's body you also get {{cursor}} for where to leave the cursor and {{rollover}} for the unfinished tasks of the previous dated page. In a template's properties, wrap a pattern that starts with a brace in quotes, or YAML reads it as a list."
-				)
-			)
-			.addText((t) =>
-				t
-					.setPlaceholder("{{date}} {{name:New page}}")
-					.setValue(this.plugin.settings.filenamePattern)
-					.onChange((v) => {
-						this.plugin.settings.filenamePattern = v;
-						void this.plugin.persistSettings();
-					})
-			);
-		new Setting(c)
-			.setName("Ask for template answers")
-			.setDesc("Templates using {{ask:Question}} open a small dialog before the page is made. Off fills their defaults silently.")
-			.then((s) =>
-				help(
-					s,
-					"Only templates that actually use {{ask:Question}} are affected; everything else is made the moment you pick it. The answer can go in the page's name as well as its body, and the same question asked twice is one field. Write {{ask:Client=Acme}} to give a question a default, which is what an unanswered field falls back to. A single template can overrule this setting with an 'ask' property of true or false."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.askForAnswers).onChange((v) => {
-					this.plugin.settings.askForAnswers = v;
-					void this.plugin.persistSettings();
-				})
-			);
-		new Setting(c)
-			.setName("New template starter")
-			.setDesc("What the New template button seeds a fresh template with.")
-			.then((s) =>
-				help(
-					s,
-					"The frontmatter properties (and any body) every new template starts from. It uses 'icon' and 'description' by default; add your own properties and defaults. Leave empty for the built-in starter."
-				)
-			)
-			.addTextArea((t) => {
-				t.setPlaceholder(DEFAULT_TEMPLATE_SEED)
-					.setValue(this.plugin.settings.templateSeed)
-					.onChange((v) => {
-						this.plugin.settings.templateSeed = v;
-						void this.plugin.persistSettings();
-					});
-				t.inputEl.rows = 6;
-				t.inputEl.addClass("pe-tpl-seed");
-			});
-		const templates = this.plugin.templateNotes();
-		new Setting(c)
-			.setName("Available templates")
-			.setDesc(
-				templates.length
-					? `${templates.length} template${templates.length === 1 ? "" : "s"} in the gallery.`
-					: "None yet. Click New template above to make your first."
-			)
-			.then((s) =>
-				help(
-					s,
-					"The notes currently offered in the New-page gallery, listed below, with how each names its pages and which folders it belongs to. Open one to edit its content, or use its Icon button to pick the emoji or Lucide icon shown on its gallery card."
-				)
-			);
-		for (const f of templates) {
-			const meta = this.plugin.templateMeta(f);
-			// Naming and scope first: they are what makes a template folder-aware,
-			// and they are the two things you cannot see from the note's title.
-			const facts = [
-				meta.filename && `Names pages ${meta.filename}`,
-				meta.destination && `Saves to ${meta.destination}`,
-				meta.unique != null && meta.unique !== false ? "One page per day" : "",
-				meta.ask === false || meta.ask === "false" || meta.ask === "no" ? "Never asks" : "",
-				meta.folders.length && `For ${meta.folders.join(", ")}`,
-			]
-				.filter(Boolean)
-				.join(" · ");
-			const row = new Setting(c).setDesc(facts || meta.desc || f.path);
-			this.plugin.renderTemplateIcon(row.nameEl.createSpan({ cls: "pe-tpl-ic pe-tpl-ic-inline" }), meta.icon);
-			row.nameEl.createSpan({ text: " " + f.basename });
-			row.addButton((b) =>
-				b.setButtonText("Icon").setTooltip("Choose an icon").onClick(() => {
-					new IconPickerModal(this.plugin, meta.icon, async (v) => {
-						await this.plugin.setTemplateIcon(f, v);
-						this.display();
-					}).open();
-				})
-			);
-			row.addButton((b) =>
-				b.setButtonText("Open").onClick(() => {
-					void this.plugin.app.workspace.getLeaf(false).openFile(f);
-				})
-			);
-		}
-
-		section("Search", "search");
-		new Setting(c)
-			.setName("Search everywhere")
-			.setDesc("Instant vault-wide search across titles, headings, body, tags, and folders.")
-			.then((s) =>
-				help(
-					s,
-					"Word-prefix matching (type 'budg', find 'budget'), with results grouped by section. Open it with the 'Search everywhere' command, bind a hotkey like Ctrl+E to make it muscle memory. The index updates as you edit and is cached in the plugin folder."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.searchEnabled).onChange((v) => {
-					this.plugin.settings.searchEnabled = v;
-					void this.plugin.persistSettings();
-					if (v) void this.plugin.search.start();
-					else this.plugin.search.stop();
-				})
-			);
-		new Setting(c)
-			.setName("Titles only in results")
-			.setDesc("Show results as a clean list of page titles, hiding the body snippet.")
-			.then((s) =>
-				help(
-					s,
-					"On by default. You can flip it any time from the list/text button inside the search box itself; this setting just chooses the starting default."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.searchCompact).onChange((v) => {
-					this.plugin.settings.searchCompact = v;
-					void this.plugin.persistSettings();
-				})
-			);
-		new Setting(c)
-			.setName("Search PDF text")
-			.setDesc("Index the text layer of PDFs.")
-			.then((s) =>
-				help(
-					s,
-					"A search hit inside a PDF opens the file right at the matching page. Scanned PDFs with no text layer won't be searchable unless they've been OCR'd first."
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.searchPdfs).onChange((v) => {
-					this.plugin.settings.searchPdfs = v;
-					void this.plugin.persistSettings();
-					this.plugin.search.restart();
-				})
-			);
-		new Setting(c)
-			.setName("Search image text (OCR)")
-			.setDesc("Make screenshots and photos searchable by the text inside them.")
-			.then((s) =>
-				help(
-					s,
-					'The OCR runs through the free "Text Extractor" community plugin, install and enable it once. Each image is read in the background exactly once and cached; a search hit opens the note embedding the image, right at its spot.'
-				)
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.searchImages).onChange((v) => {
-					this.plugin.settings.searchImages = v;
-					void this.plugin.persistSettings();
-					this.plugin.search.restart();
-				})
-			);
-		let excludeTimer: number | null = null;
-		new Setting(c)
-			.setName("Folders search skips")
-			.setDesc("Comma-separated folders to leave out of the search index.")
-			.then((s) =>
-				help(
-					s,
-					"Good for attachment dumps, archives, or template folders you never want surfacing in results. Changes re-index after a short pause. This is separate from hiding a folder, a hidden folder is still searchable unless you list it here too."
-				)
-			)
-			.addText((t) =>
-				t
-					.setPlaceholder("Attachments, _archive")
-					.setValue(this.plugin.settings.searchExclude)
-					.onChange((v) => {
-						this.plugin.settings.searchExclude = v;
-						void this.plugin.persistSettings();
-						if (excludeTimer != null) window.clearTimeout(excludeTimer);
-						excludeTimer = window.setTimeout(() => {
-							excludeTimer = null;
-							if (this.plugin.settings.searchEnabled) this.plugin.search.restart();
-						}, 1200);
-					})
-			);
 
 		const setVisible = (el: HTMLElement, v: boolean) => (el.style.display = v ? "" : "none");
 		const applyView = () => {
@@ -7967,7 +7392,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 				for (const it of items) {
 					const name = it.querySelector(".setting-item-name")?.textContent?.toLowerCase() ?? "";
 					const desc = it.querySelector(".setting-item-description")?.textContent?.toLowerCase() ?? "";
-					const hit = nameHit || name.includes(q) || desc.includes(q);
+					const hit = nameHit || name.includes(q) || desc.includes(q) || (it.dataset.peAlias ?? "").includes(q);
 					setVisible(it, hit);
 					if (hit) anyHit = true;
 				}
@@ -7975,12 +7400,12 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			}
 		};
 
-		for (const t of TABS) {
-			const btn = tabBar.createEl("button", { text: t.label, cls: "pe-settings-tab" });
-			btn.toggleClass("is-active", t.id === this.activeTab);
+		for (const p of pages) {
+			const btn = tabBar.createEl("button", { text: p.label, cls: "pe-settings-tab" });
+			btn.toggleClass("is-active", p.id === this.activeTab);
 			btn.onclick = () => {
-				if (this.activeTab === t.id) return;
-				this.activeTab = t.id;
+				if (this.activeTab === p.id) return;
+				this.activeTab = p.id;
 				for (const other of Array.from(tabBar.children) as HTMLElement[]) other.toggleClass("is-active", other === btn);
 				applyView();
 			};
@@ -7992,5 +7417,704 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		});
 
 		applyView();
+	}
+
+	/** Every row of the settings tab, in order, as plain data: the one source
+	 *  both renderers draw from, so they cannot drift apart. Built fresh on each
+	 *  render because several sections list live state (the buttons actually in
+	 *  the toolbar, the folders you have hidden, the templates you have written). */
+	private buildPages(): Page[] {
+		const layout: Row[] = [];
+		const ordering: Row[] = [];
+		const templates: Row[] = [];
+		const search: Row[] = [];
+
+		layout.push({
+			name: "Desktop layout",
+			desc: "How the Files pane looks on desktop. Phones use Drill for every option except Obsidian default. The non-default options use a two-pane split (folders on the left, the selected folder's pages on the right). Drag the divider to resize.",
+			help: "Not sure which to pick? Notebooks and sections is the OneNote-style two-level view most people want. Full folder tree stays closest to vanilla Obsidian, just inside the two-pane split. Phones ignore this and always use Drill (except on Obsidian default).",
+			build: (s) => {
+				const list = s.descEl.createEl("ul", { cls: "pe-setting-list" });
+				const item = (name: string, text: string) => {
+					const li = list.createEl("li");
+					li.createEl("strong", { text: name });
+					li.createSpan({ text: ": " + text });
+				};
+				item("Obsidian default", "the normal single-pane file explorer, untouched.");
+				item("Full folder tree", "Obsidian's own nested tree on the left, every level.");
+				item("Notebooks only", "just your top-level folders; the right pane drills everything below.");
+				item("Notebooks and sections", "your top folders plus their immediate subfolders (two fixed levels); anything deeper opens on the right.");
+				item("Drill", "one level at a time, everywhere.");
+				s.descEl.createDiv({
+					cls: "pe-setting-note",
+					text: "On a vault only two levels deep, Full folder tree and Notebooks and sections look alike; the difference shows once folders nest three or more levels.",
+				});
+				s.addDropdown((d) =>
+					d
+						.addOptions({
+							default: "Obsidian default",
+							tree: "Full folder tree",
+							notebooks: "Notebooks only",
+							onenote: "Notebooks and sections",
+							drill: "Drill (one level at a time)",
+						})
+						.setValue(this.plugin.settings.sectionsLayout ? this.plugin.settings.desktopPane : "default")
+						.onChange((v) => this.plugin.setLayout(v as "default" | PaneMode))
+				);
+			},
+		});
+		layout.push({
+			name: "Recent Pages",
+			desc: "Pin a list of your last-opened notes above the folder tree.",
+			help: "Recency is tracked whether this is on or off, so the list is already warm the moment you enable it. Click any entry to jump straight back to that note.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.showRecent).onChange((v) => {
+						this.plugin.settings.showRecent = v;
+						void this.plugin.persistSettings();
+						this.plugin.reapplySections();
+					})
+				);
+			},
+		});
+		layout.push({
+			name: "Power Desk borrows the pages pane",
+			desc: "A calendar or inbox tab is not a page: while one is active, the pages panel hides and the sidebar narrows so the view gets the width. Click the folder panel to bring the pages back.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.deskSolo).onChange((v) => {
+						this.plugin.settings.deskSolo = v;
+						void this.plugin.persistSettings();
+						if (!v) this.plugin.exitDeskSolo();
+					})
+				);
+			},
+		});
+		layout.push({
+			name: "Hide explorer buttons on phones",
+			desc: "On phones, hide Obsidian's own explorer buttons while the drill view is up.",
+			help: "The drill view has its own New page button, so Obsidian's new-note, new-folder, sort, and collapse buttons are redundant there. Turn this off to keep them. Desktop is never affected.",
+			build: (s) => {
+				s.addToggle((t) => t.setValue(this.plugin.settings.hidePhoneActions).onChange((v) => this.plugin.setHidePhoneActions(v)));
+			},
+		});
+		layout.push({
+			name: "A folder's own note makes it a page",
+			desc: "A note named after the folder it sits in turns that folder into an expandable page instead of a plain folder.",
+			aliases: ["folder note"],
+			help: "Obsidian gives this shape no meaning of its own, so it is a choice. On, a folder holding a note of the same name becomes an expandable page anchored by that note, which suits a vault that uses such notes as covers. Off, the folder stays a folder you step into and the note is just a page inside it, which suits a vault where naming a page after its folder is only a habit. Either way this leaves alone the other shape, a note sitting BESIDE a folder of the same name, which stays an expandable page with its subpages.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.folderNoteGroups).onChange((v) => {
+						this.plugin.settings.folderNoteGroups = v;
+						void this.plugin.persistSettings();
+						this.plugin.orderChanged();
+					})
+				);
+			},
+		});
+		layout.push({
+			name: "Phone: drawer tabs as a menu button",
+			desc: "Fold the Files tab row into a menu button beside the vault settings, giving that row back to the folder list.",
+			help: "Phones only, and off unless you ask. Obsidian already collapses these tabs into a menu that flies open on tap; it just spends a whole row on the trigger. That trigger moves up beside the settings gear, and its menu still lists Files, Bookmarks and the rest. Search in that menu opens this plugin's search, which reaches the whole vault rather than a pane. Nothing is hidden unless the move works, and everything goes back when this is turned off.",
+			build: (s) => {
+				s.addToggle((t) => t.setValue(this.plugin.settings.phoneDrawerMenu).onChange((v) => this.plugin.setPhoneDrawerMenu(v)));
+			},
+		});
+		layout.push({
+			name: "Phone: drawer menu entries",
+			desc: "Choose what the drawer's switcher menu lists: hide built-in entries you never open, and add commands you want in reach.",
+			help: "The menu behind the drawer's tab switcher (Files, Search, Tags and the rest). Hiding an entry only takes it off this menu; its view keeps working and returns the moment the toggle goes back on. Added commands run when tapped, so anything from the command palette can sit here (the Power apps launcher, Ask your vault, a daily note). The same menu is shaped whether or not it is folded into a header button, and desktop is never affected.",
+			build: (s) => {
+				s.addButton((b) =>
+					b.setButtonText("Add command").onClick(() => {
+						new DrawerCommandPicker(this.plugin, (id) => {
+							this.plugin.settings.drawerMenuCommands.push(id);
+							void this.plugin.persistSettings();
+							this.plugin.applyDrawerMenuItems();
+							this.refresh();
+						}).open();
+					})
+				);
+			},
+		});
+		// The live drawer knows its menu best, so its rows are listed when one is
+		// up (order, labels, and any entries other plugins added); the stock five
+		// are the floor so a desktop settings screen still shows the toggles.
+		const natives: { type: string; label: string }[] = [];
+		document
+			.querySelectorAll(".workspace-drawer.mod-left .workspace-drawer-tab-options-list > .workspace-tab-header:not(.pe-drawer-cmd)")
+			.forEach((el) => {
+				if (!el.instanceOf(HTMLElement)) return;
+				const type = el.dataset.type ?? "";
+				const label = el.querySelector(".workspace-tab-header-inner-title")?.textContent?.trim() ?? "";
+				if (type && label && !natives.some((n) => n.type === type)) natives.push({ type, label });
+			});
+		for (const it of DRAWER_NATIVE_ITEMS) if (!natives.some((n) => n.type === it.type)) natives.push(it);
+		for (const it of natives) {
+			layout.push({
+				name: it.label,
+				build: (s) => {
+					s.addToggle((t) =>
+						t.setValue(!this.plugin.settings.drawerMenuHidden.includes(it.type)).onChange((v) => {
+							const set = new Set(this.plugin.settings.drawerMenuHidden);
+							if (v) set.delete(it.type);
+							else set.add(it.type);
+							this.plugin.settings.drawerMenuHidden = [...set];
+							void this.plugin.persistSettings();
+							this.plugin.applyDrawerMenuItems();
+						})
+					);
+				},
+			});
+		}
+		const menuCmds = this.plugin.settings.drawerMenuCommands;
+		const cmdReg = (this.plugin.app as unknown as { commands: CommandRegistry }).commands;
+		menuCmds.forEach((id, i) => {
+			const cmd = cmdReg.commands[id];
+			layout.push({
+				name: cmd ? cmd.name : id,
+				desc: cmd ? undefined : "Not available right now (its plugin may be off).",
+				build: (s) => {
+					const move = (from: number, to: number) => {
+						[menuCmds[from], menuCmds[to]] = [menuCmds[to], menuCmds[from]];
+						void this.plugin.persistSettings();
+						this.plugin.applyDrawerMenuItems();
+						this.refresh();
+					};
+					s.addExtraButton((b) => b.setIcon("chevron-up").setTooltip("Move up").setDisabled(i === 0).onClick(() => move(i, i - 1)));
+					s.addExtraButton((b) =>
+						b
+							.setIcon("chevron-down")
+							.setTooltip("Move down")
+							.setDisabled(i === menuCmds.length - 1)
+							.onClick(() => move(i, i + 1))
+					);
+					s.addExtraButton((b) =>
+						b
+							.setIcon("x")
+							.setTooltip("Remove")
+							.onClick(() => {
+								menuCmds.splice(i, 1);
+								void this.plugin.persistSettings();
+								this.plugin.applyDrawerMenuItems();
+								this.refresh();
+							})
+					);
+				},
+			});
+		});
+		layout.push({
+			name: "Phone: navigation actions in the header",
+			desc: "Move search, new tab, the tab switcher and the menu up into the note's header, and hide the bar at the bottom of the screen.",
+			help: "Phones only, and off unless you ask, because it borrows Obsidian's own buttons rather than copying them: the tab switcher carries a live count, so it has to be the real thing. They are handed straight back when this is turned off or the plugin is disabled. Nothing is hidden until the move has actually worked, so if an Obsidian update renames those buttons you lose this tidier header, never the buttons themselves. Back and forward are not moved: the header already has its own pair.",
+			build: (s) => {
+				s.addToggle((t) => t.setValue(this.plugin.settings.phoneTopActions).onChange((v) => this.plugin.setPhoneTopActions(v)));
+			},
+		});
+		layout.push({
+			name: "Actions in the explorer toolbar",
+			desc: "Put Search everywhere, New page, and the Power apps launcher in the file explorer's toolbar instead of the ribbon.",
+			aliases: ["ribbon"],
+			help: "For a short ribbon. The same three actions either way, just somewhere else: in the toolbar they sit beside the folder buttons they mostly concern, rather than in a strip shared with every other plugin. This moves only this plugin's icons. To thin out the rest, right-click the ribbon and untick what you do not want, which works for every icon including Obsidian's own.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.actionsInExplorerBar).onChange((v) => {
+						this.plugin.settings.actionsInExplorerBar = v;
+						void this.plugin.persistSettings();
+						this.plugin.applyActionHome();
+					})
+				);
+			},
+		});
+		// One row per button actually in the toolbar right now, read from the pane
+		// rather than from a list kept here: whatever Obsidian puts there (and
+		// whatever a future version adds) is offered, and nothing is offered that
+		// is not really there.
+		const inv = this.plugin.barInventory();
+		layout.push({
+			name: "Buttons in the explorer toolbar",
+			desc: inv.length
+				? "Add any command, turn off the ones you do not use, and put them in the order you want. Obsidian's own buttons are included."
+				: "Open the file explorer pane, then come back here and its buttons will be listed.",
+			aliases: ["ribbon"],
+			help: "The app's buttons are recognized by their icon, never by their name, because names are translated. A button this cannot recognize is one it never touches, so an Obsidian update can only ever give you a button back (it can never hide or move the wrong one). Hidden buttons still work as commands and hotkeys; only the icon goes. Added commands run when clicked, so anything in the command palette can sit here, and one whose plugin is off simply does not draw until it returns.",
+			build: (s) => {
+				s.addButton((b) =>
+					b.setButtonText("Add command").onClick(() => {
+						new BarCommandPicker(this.plugin, (id) => {
+							this.plugin.addBarCommand(id);
+							this.refresh();
+						}).open();
+					})
+				);
+				if (inv.length) {
+					s.addExtraButton((b) =>
+						b
+							.setIcon("rotate-ccw")
+							.setTooltip("Back to the default toolbar")
+							.onClick(() => {
+								this.plugin.resetBar();
+								this.refresh();
+							})
+					);
+				}
+			},
+		});
+		// The rows are siblings of one another under either renderer, so the order
+		// is read straight back off the DOM after a drag, with no index
+		// bookkeeping to drift. Rows that are not buttons carry no key and drop
+		// out of the read.
+		const commit = (el: HTMLElement) => {
+			const host = el.parentElement;
+			if (!host) return;
+			this.plugin.setBarOrder(
+				(Array.from(host.children) as HTMLElement[]).map((n) => n.dataset.peKey ?? "").filter(Boolean)
+			);
+		};
+		for (const b of inv) {
+			layout.push({
+				name: b.label,
+				desc: b.missing ? "Not available right now (its plugin may be off)." : undefined,
+				build: (s) => {
+					const el = s.settingEl;
+					el.addClasses(["pe-sub-setting", "pe-bar-row"]);
+					el.dataset.peKey = b.key;
+					// The grip arms the drag and disarms it after, so a press anywhere
+					// else on the row (a switch, the remove button) still behaves like a
+					// press. Dragging the whole row otherwise starts from the toggle.
+					const grip = createDiv({ cls: "pe-bar-grip", attr: { "aria-label": "Drag to reorder" } });
+					setIcon(grip, "grip-vertical");
+					el.prepend(grip);
+					// A redraw hands the row back its own element, having emptied only
+					// the controls; the grip and these listeners sit on the row itself
+					// and would stack up, so they are torn down through the signal.
+					const drag = new AbortController();
+					const until = { signal: drag.signal };
+					grip.addEventListener("pointerdown", () => (el.draggable = true), until);
+					el.addEventListener(
+						"dragstart",
+						(ev) => {
+							el.addClass("is-dragging");
+							ev.dataTransfer?.setData("text/plain", b.key); // Firefox starts no drag without payload
+							if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+						},
+						until
+					);
+					el.addEventListener(
+						"dragend",
+						() => {
+							el.removeClass("is-dragging");
+							el.draggable = false;
+							commit(el);
+						},
+						until
+					);
+					el.addEventListener(
+						"dragover",
+						(ev) => {
+							ev.preventDefault();
+							const host = el.parentElement;
+							const moving = host?.querySelector<HTMLElement>(".pe-bar-row.is-dragging");
+							if (!host || !moving || moving === el) return;
+							// past the halfway line it goes below this row, which is the
+							// gesture reading you expect from every other list
+							const r = el.getBoundingClientRect();
+							host.insertBefore(moving, ev.clientY > r.top + r.height / 2 ? el.nextSibling : el);
+						},
+						until
+					);
+					const teardown = () => {
+						drag.abort();
+						grip.remove();
+						el.removeClasses(["pe-sub-setting", "pe-bar-row"]);
+						delete el.dataset.peKey;
+					};
+					// a command you added is removed outright; a button the app owns can
+					// only be hidden, because taking it off the list would take its
+					// switch with it
+					if (b.key.startsWith("cmd:")) {
+						const id = b.key.slice(4);
+						s.addExtraButton((x) =>
+							x
+								.setIcon(this.plugin.commandIcon(id))
+								.setTooltip("Choose an icon")
+								.onClick(() => {
+									new IconPickerModal(this.plugin, this.plugin.commandIcon(id), (v) => {
+										this.plugin.setBarIcon(id, v);
+										this.refresh();
+									}).open();
+								})
+						);
+						s.addExtraButton((x) =>
+							x
+								.setIcon("x")
+								.setTooltip("Remove")
+								.onClick(() => {
+									this.plugin.removeBarCommand(id);
+									this.refresh();
+								})
+						);
+					} else {
+						s.addToggle((t) =>
+							t
+								.setValue(!this.plugin.settings.explorerBarHidden.includes(b.key))
+								.onChange((v) => this.plugin.setBarHidden(b.key, !v))
+						);
+					}
+					return teardown;
+				},
+			});
+		}
+		layout.push({
+			name: "Always edit",
+			desc: "Keep notes in editing view, and hide the header button that switches to reading view.",
+			help: "For anyone who treats their vault like a notebook and never reads a note read-only. Obsidian's own 'Default view for new tabs' covers only notes it opens fresh; a note reopened from a saved workspace, or one whose frontmatter asks for reading view, still lands read-only. This turns those back and takes the button off the header so it cannot be hit by accident. Nothing stops you toggling reading view from the command palette.",
+			build: (s) => {
+				s.addToggle((t) => t.setValue(this.plugin.settings.alwaysEdit).onChange((v) => this.plugin.setAlwaysEdit(v)));
+			},
+		});
+		layout.push({
+			name: "Full-width navigation on phones",
+			desc: "Let the navigation drawer take the whole screen instead of leaving a slice of the note beside it.",
+			help: "Obsidian leaves a strip of the note showing next to the open drawer so you can tap it to dismiss. When the drawer is your navigator that strip is just lost width, so this takes the full screen and you close it with the back gesture or the sidebar button instead. Phones only; desktop is never affected.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.phoneWideNav).onChange((v) => {
+						this.plugin.settings.phoneWideNav = v;
+						document.body.toggleClass("pe-wide-nav", v);
+						void this.plugin.persistSettings();
+					})
+				);
+			},
+		});
+		layout.push({
+			name: "Color notebooks automatically",
+			desc: "Give every notebook a cover color from the palette instead of a gray outline.",
+			help: "Notebooks with no color of their own walk the palette by position, so neighbours never match. A color you pick yourself always wins and never moves; these follow the arrangement, so rearranging notebooks reshuffles them. Turn this off for plain outlines everywhere.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.autoNotebookColors).onChange((v) => {
+						this.plugin.settings.autoNotebookColors = v;
+						this.plugin.orderChanged(); // saves, then repaints the trees and pages
+					})
+				);
+			},
+		});
+		const hidden = this.plugin.settings.hidden;
+		const missing = hidden.filter((p) => !(this.plugin.app.vault.getAbstractFileByPath(p) instanceof TFolder));
+		layout.push({
+			name: "Hidden folders",
+			desc: hidden.length
+				? "Folders tucked out of the tree. Right-click any folder to hide it."
+				: "None yet. Right-click a folder and choose Hide folder, handy for attachment dumps.",
+			help: "A hidden folder disappears from the explorer tree, but its notes still turn up in search (add it to 'Folders search skips' too if you want it fully out). Use the eye button in the pages pane for a quick temporary peek, or the Show/hide hidden folders command.",
+			build: (s) => {
+				// A folder renamed or moved outside the plugin (filesystem, Sync, or while
+				// it was off) leaves its old path stranded here. Offer a one-click sweep
+				// user-initiated, so it can't fight a Sync catch-up the way an auto-prune would.
+				if (!missing.length) return;
+				s.addButton((b) =>
+					b
+						.setButtonText(`Remove ${missing.length} missing`)
+						.setTooltip("Clear entries whose folder no longer exists")
+						.onClick(() => {
+							const n = this.plugin.removeMissingHidden();
+							new Notice(`Cleared ${n} stale hidden-folder entr${n === 1 ? "y" : "ies"}.`);
+							this.refresh();
+						})
+				);
+			},
+		});
+		for (const p of hidden) {
+			const gone = !(this.plugin.app.vault.getAbstractFileByPath(p) instanceof TFolder);
+			layout.push({
+				name: p,
+				desc: gone ? "Folder no longer exists (safe to remove)." : undefined,
+				build: (s) => {
+					s.addButton((b) =>
+						b.setButtonText(gone ? "Remove" : "Unhide").onClick(() => {
+							this.plugin.unhidePath(p);
+							this.refresh();
+						})
+					);
+				},
+			});
+		}
+
+		ordering.push({
+			name: "Drag to reorder",
+			desc: "Drag items in the file explorer to arrange them by hand.",
+			aliases: ["drag and drop"],
+			help: "Drop between two items to set the order; drop onto a folder to move the item inside it. Folders you never arrange keep Obsidian's normal sort. This is Power Explorer's founding feature.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.dragEnabled).onChange((v) => {
+						this.plugin.settings.dragEnabled = v;
+						void this.plugin.persistSettings();
+					})
+				);
+			},
+		});
+		ordering.push({
+			name: "Unarranged items go",
+			desc: "Where new or never-dragged items land in an arranged folder.",
+			help: "In a folder you've hand-ordered, brand-new notes (and any you've never dragged) collect together at the top or the bottom, keeping Obsidian's own sort among themselves instead of scattering through your arrangement.",
+			build: (s) => {
+				s.addDropdown((d) =>
+					d
+						.addOptions({ bottom: "Bottom", top: "Top" })
+						.setValue(this.plugin.settings.unranked)
+						.onChange((v) => {
+							this.plugin.settings.unranked = v as "top" | "bottom";
+							void this.plugin.persistSettings();
+							this.plugin.orderChanged();
+						})
+				);
+			},
+		});
+		const count = Object.keys(this.plugin.settings.orders).length;
+		ordering.push({
+			name: "Manually arranged folders",
+			desc: `${count} folder${count === 1 ? "" : "s"} currently carry a manual order.`,
+			help: "Each of these folders remembers a hand-set order. Reset a single folder from its right-click menu ('Reset manual order'), or wipe every folder's order at once with Clear all.",
+			build: (s) => {
+				s.addButton((b) =>
+					b.setButtonText("Clear all").onClick(() => {
+						this.plugin.settings.orders = {};
+						this.plugin.orderChanged();
+						this.refresh();
+						new Notice("All manual orders cleared.");
+					})
+				);
+			},
+		});
+		const forced = Object.keys(this.plugin.settings.folderSort);
+		ordering.push({
+			name: "Folders that sort themselves",
+			desc: forced.length
+				? `Sorting by name, not by hand: ${forced.map((p) => nameOf(p) || p).join(", ")}.`
+				: "None. Right-click any folder and pick Sort to keep it filed by name.",
+			help: "Set one folder to sort itself with its right-click Sort menu. Handy for folders other tools keep adding to, like People, where a new note should file itself alphabetically instead of landing at the end. Dragging is off in these folders, but their hand-set order is kept and comes back if you switch that folder to Manual.",
+			build: (s) => {
+				s.addButton((b) =>
+					b
+						.setButtonText("Reset all to manual")
+						.setDisabled(!forced.length)
+						.onClick(() => {
+							this.plugin.settings.folderSort = {};
+							this.plugin.orderChanged();
+							this.refresh();
+							new Notice("Every folder follows manual order again.");
+						})
+				);
+			},
+		});
+
+		templates.push({
+			name: "Templates folder",
+			desc: "The folder whose notes fill the New-page gallery.",
+			help: "The + button in the pages pane opens a gallery of these notes as templates. A template note is configured by its own properties: 'icon' (an emoji or a Lucide icon name) and 'description' set its gallery card, 'filename' names the pages it makes, 'folders' lists where it is offered, 'destination' files its pages in one folder wherever you press +, and 'unique: day' opens today's page instead of making a second one. None of them are copied into the pages themselves. Every template also gets its own command, so the ones you use daily can take a hotkey. Leave this empty and Power Explorer falls back to a top-level \"Templates\" folder if you have one.",
+			build: (s) => {
+				s.addText((t) =>
+					t
+						.setPlaceholder("Templates")
+						.setValue(this.plugin.settings.templatesFolder)
+						.onChange((v) => {
+							this.plugin.settings.templatesFolder = v.trim();
+							void this.plugin.persistSettings();
+							// Point this somewhere else and the per-template commands
+							// follow, rather than describing the old folder until restart.
+							this.plugin.syncTemplateCommands();
+						})
+				);
+				s.addButton((b) =>
+					b
+						.setButtonText("New template")
+						.setCta()
+						.onClick(async () => {
+							await this.plugin.newTemplate();
+							this.refresh();
+						})
+				);
+			},
+		});
+		templates.push({
+			name: "Page name",
+			desc: "How pages are named when their template says nothing. {{date}} = today, {{name:Text}} = the part you type over. Empty names them Untitled.",
+			help: "A template names its own pages with a 'filename' property; this is the fallback for the ones that do not. The tokens are {{date}} and {{time}} (both take a format, as in {{date:YYYY-MM}}, and an offset, as in {{date+1d}} or {{date-1w:dddd}}), {{folder}}, {{parent}}, {{vault}}, and {{name:Text}} for the generic part you mean to replace, which is preselected when the page opens so you can type straight over it. In a template's body you also get {{cursor}} for where to leave the cursor and {{rollover}} for the unfinished tasks of the previous dated page. In a template's properties, wrap a pattern that starts with a brace in quotes, or YAML reads it as a list.",
+			build: (s) => {
+				s.addText((t) =>
+					t
+						.setPlaceholder("{{date}} {{name:New page}}")
+						.setValue(this.plugin.settings.filenamePattern)
+						.onChange((v) => {
+							this.plugin.settings.filenamePattern = v;
+							void this.plugin.persistSettings();
+						})
+				);
+			},
+		});
+		templates.push({
+			name: "Ask for template answers",
+			desc: "Templates using {{ask:Question}} open a small dialog before the page is made. Off fills their defaults silently.",
+			help: "Only templates that actually use {{ask:Question}} are affected; everything else is made the moment you pick it. The answer can go in the page's name as well as its body, and the same question asked twice is one field. Write {{ask:Client=Acme}} to give a question a default, which is what an unanswered field falls back to. A single template can overrule this setting with an 'ask' property of true or false.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.askForAnswers).onChange((v) => {
+						this.plugin.settings.askForAnswers = v;
+						void this.plugin.persistSettings();
+					})
+				);
+			},
+		});
+		templates.push({
+			name: "New template starter",
+			desc: "What the New template button seeds a fresh template with.",
+			help: "The frontmatter properties (and any body) every new template starts from. It uses 'icon' and 'description' by default; add your own properties and defaults. Leave empty for the built-in starter.",
+			build: (s) => {
+				s.addTextArea((t) => {
+					t.setPlaceholder(DEFAULT_TEMPLATE_SEED)
+						.setValue(this.plugin.settings.templateSeed)
+						.onChange((v) => {
+							this.plugin.settings.templateSeed = v;
+							void this.plugin.persistSettings();
+						});
+					t.inputEl.rows = 6;
+					t.inputEl.addClass("pe-tpl-seed");
+				});
+			},
+		});
+		const notes = this.plugin.templateNotes();
+		templates.push({
+			name: "Available templates",
+			desc: notes.length
+				? `${notes.length} template${notes.length === 1 ? "" : "s"} in the gallery.`
+				: "None yet. Click New template above to make your first.",
+			help: "The notes currently offered in the New-page gallery, listed below, with how each names its pages and which folders it belongs to. Open one to edit its content, or use its Icon button to pick the emoji or Lucide icon shown on its gallery card.",
+		});
+		for (const f of notes) {
+			const meta = this.plugin.templateMeta(f);
+			// Naming and scope first: they are what makes a template folder-aware,
+			// and they are the two things you cannot see from the note's title.
+			const facts = [
+				meta.filename && `Names pages ${meta.filename}`,
+				meta.destination && `Saves to ${meta.destination}`,
+				meta.unique != null && meta.unique !== false ? "One page per day" : "",
+				meta.ask === false || meta.ask === "false" || meta.ask === "no" ? "Never asks" : "",
+				meta.folders.length && `For ${meta.folders.join(", ")}`,
+			]
+				.filter(Boolean)
+				.join(" · ");
+			templates.push({
+				name: f.basename,
+				desc: facts || meta.desc || f.path,
+				build: (s) => {
+					// the icon belongs beside the name, which means building the name
+					// rather than taking the one already written into it
+					s.nameEl.empty();
+					this.plugin.renderTemplateIcon(s.nameEl.createSpan({ cls: "pe-tpl-ic pe-tpl-ic-inline" }), meta.icon);
+					s.nameEl.createSpan({ text: " " + f.basename });
+					s.addButton((b) =>
+						b.setButtonText("Icon").setTooltip("Choose an icon").onClick(() => {
+							new IconPickerModal(this.plugin, meta.icon, async (v) => {
+								await this.plugin.setTemplateIcon(f, v);
+								this.refresh();
+							}).open();
+						})
+					);
+					s.addButton((b) =>
+						b.setButtonText("Open").onClick(() => {
+							void this.plugin.app.workspace.getLeaf(false).openFile(f);
+						})
+					);
+				},
+			});
+		}
+
+		search.push({
+			name: "Search everywhere",
+			desc: "Instant vault-wide search across titles, headings, body, tags, and folders.",
+			help: "Word-prefix matching (type 'budg', find 'budget'), with results grouped by section. Open it with the 'Search everywhere' command, bind a hotkey like Ctrl+E to make it muscle memory. The index updates as you edit and is cached in the plugin folder.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.searchEnabled).onChange((v) => {
+						this.plugin.settings.searchEnabled = v;
+						void this.plugin.persistSettings();
+						if (v) void this.plugin.search.start();
+						else this.plugin.search.stop();
+					})
+				);
+			},
+		});
+		search.push({
+			name: "Titles only in results",
+			desc: "Show results as a clean list of page titles, hiding the body snippet.",
+			help: "On by default. You can flip it any time from the list/text button inside the search box itself; this setting just chooses the starting default.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.searchCompact).onChange((v) => {
+						this.plugin.settings.searchCompact = v;
+						void this.plugin.persistSettings();
+					})
+				);
+			},
+		});
+		search.push({
+			name: "Search PDF text",
+			desc: "Index the text layer of PDFs.",
+			help: "A search hit inside a PDF opens the file right at the matching page. Scanned PDFs with no text layer won't be searchable unless they've been OCR'd first.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.searchPdfs).onChange((v) => {
+						this.plugin.settings.searchPdfs = v;
+						void this.plugin.persistSettings();
+						this.plugin.search.restart();
+					})
+				);
+			},
+		});
+		search.push({
+			name: "Search image text (OCR)",
+			desc: "Make screenshots and photos searchable by the text inside them.",
+			help: 'The OCR runs through the free "Text Extractor" community plugin, install and enable it once. Each image is read in the background exactly once and cached; a search hit opens the note embedding the image, right at its spot.',
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.searchImages).onChange((v) => {
+						this.plugin.settings.searchImages = v;
+						void this.plugin.persistSettings();
+						this.plugin.search.restart();
+					})
+				);
+			},
+		});
+		search.push({
+			name: "Folders search skips",
+			desc: "Comma-separated folders to leave out of the search index.",
+			help: "Good for attachment dumps, archives, or template folders you never want surfacing in results. Changes re-index after a short pause. This is separate from hiding a folder, a hidden folder is still searchable unless you list it here too.",
+			build: (s) => {
+				s.addText((t) =>
+					t
+						.setPlaceholder("Attachments, _archive")
+						.setValue(this.plugin.settings.searchExclude)
+						.onChange((v) => {
+							this.plugin.settings.searchExclude = v;
+							void this.plugin.persistSettings();
+							if (this.excludeTimer != null) window.clearTimeout(this.excludeTimer);
+							this.excludeTimer = window.setTimeout(() => {
+								this.excludeTimer = null;
+								if (this.plugin.settings.searchEnabled) this.plugin.search.restart();
+							}, 1200);
+						})
+				);
+			},
+		});
+
+		return [
+			{ id: "layout", label: "Layout", rows: layout },
+			{ id: "ordering", label: "Ordering", rows: ordering },
+			{ id: "templates", label: "Templates", rows: templates },
+			{ id: "search", label: "Search", rows: search },
+		];
 	}
 }

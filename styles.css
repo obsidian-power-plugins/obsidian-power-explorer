@@ -1490,6 +1490,42 @@ textarea.pe-tpl-seed {
 }
 
 /* ---------------- tabbed settings ---------------- */
+/* the masthead above the section list: what this is and which build is running.
+   In the declarative tab it fills an emptied setting row, which is why the
+   display is reset; in the fallback it is a plain div and finds its own padding. */
+.pe-about {
+	display: block;
+}
+
+.pe-about-standalone {
+	padding: 2px 0 12px;
+}
+
+.pe-about-head {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.pe-about-name {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.pe-about-version {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	background: var(--background-modifier-hover);
+	border-radius: 4px;
+	padding: 1px 6px;
+}
+
+.pe-about-desc {
+	margin-top: 4px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
 .pe-settings-search {
 	margin: 4px 0 10px;
 }
@@ -1831,11 +1867,14 @@ body.pe-own-new-folder .nav-buttons-container .nav-action-button:has(.lucide-fol
 	cursor: grabbing;
 }
 
-.pe-bar-list .setting-item.is-dragging {
+/* the row carries its own class rather than leaning on a list wrapper: the
+   declarative settings page puts every row straight into one container, so
+   there is no wrapper left to scope these to */
+.pe-bar-row.is-dragging {
 	opacity: 0.4;
 }
 
-.pe-bar-list .setting-item:hover .pe-bar-grip {
+.pe-bar-row:hover .pe-bar-grip {
 	color: var(--text-muted);
 }
 
