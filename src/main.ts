@@ -222,6 +222,10 @@ interface PowerExplorerSettings {
 	welcomed: boolean;
 }
 
+/** Settings as they may still be found on disk: the two keys that predate the
+ *  desktopPane setting are read once at load and then deleted. */
+type LegacySettings = Partial<PowerExplorerSettings> & { notebooksMode?: boolean; drillOnDesktop?: boolean };
+
 /** What a brand-new template note starts as when the user hasn't set their own
  *  starter. `icon` takes an emoji or a Lucide icon name; `description` is the
  *  gallery card's blurb; `filename` names the pages it makes; `folders` is where
@@ -486,9 +490,10 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	async onload() {
-		const raw = (await this.readDisk()) as
-			| (Partial<PowerExplorerSettings> & { notebooksMode?: boolean; drillOnDesktop?: boolean })
-			| null;
+		// Annotated rather than asserted: every key the legacy shape adds is
+		// optional, so the two types are mutually assignable and an assertion
+		// reads as redundant, even though dropping it loses the reads below.
+		const raw: LegacySettings | null = await this.readDisk();
 		// An empty read of a file that EXISTS is not a fresh install, it is a
 		// file that would not open (a sync replacing it exactly as the app
 		// launched). Booting on defaults is survivable; writing those defaults
@@ -1290,13 +1295,15 @@ export default class PowerExplorerPlugin extends Plugin {
 			}
 			this.patchedViews.add(view);
 			this.origSort.set(view, orig);
-			const plugin = this;
-			view.getSortedFolderItems = function (folder: TFolder) {
-				let items: { file?: TAbstractFile }[] = orig.call(this, folder);
-				if (plugin.hiddenSet.size && !plugin.showHidden) {
-					items = items.filter((it) => !(it.file instanceof TFolder) || !plugin.hiddenSet.has(it.file.path));
+			// An arrow function, so the plugin stays in scope without aliasing this.
+			// The replacement is an own property of this one view, so the receiver
+			// is always that view and the original can be called on it by name.
+			view.getSortedFolderItems = (folder: TFolder) => {
+				let items: { file?: TAbstractFile }[] = orig.call(view, folder);
+				if (this.hiddenSet.size && !this.showHidden) {
+					items = items.filter((it) => !(it.file instanceof TFolder) || !this.hiddenSet.has(it.file.path));
 				}
-				return plugin.orderItems(folder, items);
+				return this.orderItems(folder, items);
 			};
 			this.register(() => {
 				if (view.getSortedFolderItems !== orig) view.getSortedFolderItems = orig;
@@ -1308,9 +1315,9 @@ export default class PowerExplorerPlugin extends Plugin {
 			// back. Repaint on the same choice that moved the tree.
 			const setSort = view.setSortOrder;
 			if (typeof setSort === "function") {
-				view.setSortOrder = function (order: string) {
-					setSort.call(this, order);
-					plugin.queuePagesRefresh();
+				view.setSortOrder = (order: string) => {
+					setSort.call(view, order);
+					this.queuePagesRefresh();
 				};
 				this.register(() => {
 					if (view.setSortOrder !== setSort) view.setSortOrder = setSort;
@@ -1894,6 +1901,11 @@ export default class PowerExplorerPlugin extends Plugin {
 			if (!btn.hasClass("nav-action-button")) continue;
 			const key = this.barKey(btn);
 			btn.toggleClass("pe-bar-off", !!key && hidden.has(key));
+			// The app's own New folder, named here rather than matched in CSS by
+			// the icon inside it: barKey already recognizes it, and our own
+			// replacement answers to a different key, so the stylesheet needs
+			// neither :has nor an exclusion.
+			btn.toggleClass("pe-app-new-folder", key === "ob:folder-plus");
 		}
 	}
 

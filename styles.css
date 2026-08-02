@@ -1833,10 +1833,11 @@ textarea.pe-tpl-seed {
 }
 
 /* ---------- our New folder instead of the app's ----------
-   The app's button is matched by its icon, never its label, which is
-   translated. Ours carries the same icon, so it is excluded by name; without
-   that this rule would hide the replacement along with the thing replaced. */
-body.pe-own-new-folder .nav-buttons-container .nav-action-button:has(.lucide-folder-plus):not(.pe-new-folder-btn) {
+   The app's button is recognized by its icon, never its label, which is
+   translated, but that happens in script: syncBarVisibility paints the class
+   below on whichever button turns out to be the app's own, so this rule needs
+   no :has and no exclusion for ours. */
+body.pe-own-new-folder .nav-buttons-container .nav-action-button.pe-app-new-folder {
 	display: none;
 }
 
