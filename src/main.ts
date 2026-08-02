@@ -6703,7 +6703,7 @@ class IconPickerModal extends Modal {
 		const ig = this.gridEl.createDiv({ cls: "pe-icon-grid" });
 		const names = (q ? this.lucide.filter((n) => n.includes(q)) : this.lucide).slice(0, 240);
 		for (const name of names) setIcon(this.cell(ig, name, () => this.pick(name)), name);
-		if (!names.length) ig.createDiv({ cls: "pe-icon-none", text: "No icons match — try another word, or upload an image." });
+		if (!names.length) ig.createDiv({ cls: "pe-icon-none", text: "No icons match (try another word, or upload an image)." });
 	}
 
 	private cell(grid: HTMLElement, value: string, onClick: () => void): HTMLElement {
@@ -6815,7 +6815,7 @@ class PageTemplateGallery extends Modal {
 		if (!this.cards.length) {
 			this.gridEl.createDiv({
 				cls: "pe-tpl-empty",
-				text: this.notes.length ? "No templates match your search." : "No templates yet — click ＋ New template to make one.",
+				text: this.notes.length ? "No templates match your search." : "No templates yet: click ＋ New template to make one.",
 			});
 		}
 		this.setActive(0);
@@ -7254,13 +7254,13 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			"Not sure which to pick? Notebooks and sections is the OneNote-style two-level view most people want. Full folder tree stays closest to vanilla Obsidian, just inside the two-pane split. Phones ignore this and always use Drill (except on Obsidian default)."
 		);
 		layoutSetting.descEl.createDiv({
-			text: "How the Files pane looks on desktop. Phones use Drill for every option except Obsidian default. The non-default options use a two-pane split — folders on the left, the selected folder's pages on the right (drag the divider to resize).",
+			text: "How the Files pane looks on desktop. Phones use Drill for every option except Obsidian default. The non-default options use a two-pane split (folders on the left, the selected folder's pages on the right). Drag the divider to resize.",
 		});
 		const layoutList = layoutSetting.descEl.createEl("ul", { cls: "pe-setting-list" });
 		const layoutItem = (name: string, text: string) => {
 			const li = layoutList.createEl("li");
 			li.createEl("strong", { text: name });
-			li.createSpan({ text: " — " + text });
+			li.createSpan({ text: ": " + text });
 		};
 		layoutItem("Obsidian default", "the normal single-pane file explorer, untouched.");
 		layoutItem("Full folder tree", "Obsidian's own nested tree on the left, every level.");
@@ -7633,7 +7633,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		for (const p of hidden) {
 			const gone = !(this.plugin.app.vault.getAbstractFileByPath(p) instanceof TFolder);
 			const row = new Setting(c).setName(p);
-			if (gone) row.setDesc("Folder no longer exists — safe to remove.");
+			if (gone) row.setDesc("Folder no longer exists (safe to remove).");
 			row.addButton((b) =>
 				b.setButtonText(gone ? "Remove" : "Unhide").onClick(() => {
 					this.plugin.unhidePath(p);
