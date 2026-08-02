@@ -438,7 +438,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	private refreshTimer: number | null = null;
 	private externalReloadTimer: number | null = null;
 	/** One generated stylesheet paints every section color: zero per-item work. */
-	private colorStyleEl: HTMLStyleElement | null = null;
+	private colorSheet: CSSStyleSheet | null = null;
 	/** Pages pane interaction state; reset when the section changes. */
 	private pagesFilter = "";
 	private filterOpen = false;
@@ -2228,11 +2228,28 @@ export default class PowerExplorerPlugin extends Plugin {
 	/* ---------------- section colors ---------------- */
 
 	/** Regenerate the one stylesheet that paints every section accent and icon.
-	 *  This is the whole runtime cost of both: no per-item classes, no observers. */
+	 *  This is the whole runtime cost of both: no per-item classes, no observers.
+	 *
+	 *  These rules select `.nav-folder-title`, which belongs to Obsidian's file
+	 *  explorer rather than to this plugin, so the per-element approach cannot
+	 *  reach them: the explorer reveals rows on expand without firing any event
+	 *  we listen to, and catching that needs a MutationObserver over the tree,
+	 *  which is exactly the cost this design exists to avoid. The rules are also
+	 *  keyed by the user's own folder paths and colors, so styles.css cannot
+	 *  express them.
+	 *
+	 *  A constructable stylesheet gives the same one-sheet behavior with no
+	 *  element in the document. Where it is unavailable (Safari below 16.4, so
+	 *  older iOS) the accents are simply skipped: they are decoration, and a
+	 *  missing accent is better than a broken pane. */
 	applyColorStyles() {
-		if (!this.colorStyleEl) {
-			this.colorStyleEl = document.head.createEl("style", { attr: { id: "pe-section-colors" } });
-			this.register(() => this.colorStyleEl?.remove());
+		if (!this.colorSheet) {
+			if (typeof CSSStyleSheet === "undefined" || !("replaceSync" in CSSStyleSheet.prototype)) return;
+			this.colorSheet = new CSSStyleSheet();
+			document.adoptedStyleSheets = [...document.adoptedStyleSheets, this.colorSheet];
+			this.register(() => {
+				document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== this.colorSheet);
+			});
 		}
 		const esc = (p: string) => p.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 		let css = "";
@@ -2245,7 +2262,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			if (!safe) continue;
 			css += `.nav-folder-title[data-path="${esc(p)}"] .nav-folder-title-content::before{content:"${safe} ";}\n`;
 		}
-		this.colorStyleEl.textContent = css;
+		this.colorSheet.replaceSync(css);
 	}
 
 	setSectionColor(folder: TFolder, color: string | null) {
