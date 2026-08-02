@@ -5862,6 +5862,10 @@ class PowerSearchModal extends Modal {
 	 *  Claude pipeline (which retrieves through this same index). */
 	private askMode = false;
 	private asking = false;
+	/** Owns whatever MarkdownRenderer attaches to a rendered answer. Rendering
+	 *  against the plugin instead would tie those children to the plugin's
+	 *  lifetime, so every answer would outlive its modal until Obsidian quits. */
+	private renderComp: Component | null = null;
 
 	constructor(private plugin: PowerExplorerPlugin) {
 		super(plugin.app);
@@ -5911,6 +5915,8 @@ class PowerSearchModal extends Modal {
 
 	onClose() {
 		if (this.debounce != null) window.clearTimeout(this.debounce);
+		this.renderComp?.unload();
+		this.renderComp = null;
 		this.contentEl.empty();
 	}
 
@@ -6000,7 +6006,10 @@ class PowerSearchModal extends Modal {
 			if (!this.askMode) return; // the user tabbed back to search mid-flight
 			this.listEl.empty();
 			const box = this.listEl.createDiv({ cls: "pe-search-answer" });
-			await MarkdownRenderer.render(this.app, answer, box, "", this.plugin);
+			this.renderComp?.unload();
+			this.renderComp = new Component();
+			this.renderComp.load();
+			await MarkdownRenderer.render(this.app, answer, box, "", this.renderComp);
 			// a citation click should land in the note, not under the modal
 			box.addEventListener("click", (e) => {
 				if ((e.target as HTMLElement).closest("a.internal-link")) this.close();
