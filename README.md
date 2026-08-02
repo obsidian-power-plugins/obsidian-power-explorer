@@ -171,6 +171,12 @@ When the companion Power Assistant plugin is installed, an **Ask AI** chip appea
 - **Search image text (OCR)**: index text inside images via the Text Extractor plugin; hits open the embedding note at the image.
 - **Folders search skips**: comma-separated folder paths the index ignores.
 
+## Coming from OneNote
+
+The [OneNote to Obsidian Migration Toolkit](https://github.com/obsidian-power-plugins/onenote-to-obsidian) is a companion set of scripts for notebook imports. It repairs the page and section names Obsidian's official importer rejects, cleans up importer artifacts across the imported Markdown afterwards (tables, checkboxes, spacing, stray placeholders), and restores the notebook, section, and page order the importer drops, writing it straight into Power Explorer's own order.
+
+Imported notebooks are also where page groups come from: the folder-note pattern the importer produces renders here as an expandable group in the pages pane, so a OneNote page with subpages arrives looking like one.
+
 ## Compatibility notes
 
 - Disable other sorting plugins (Flexplorer / Manual Sorting, Custom File Explorer sorting, Bartender) while using Power Explorer; two plugins overriding the same sort will fight.
