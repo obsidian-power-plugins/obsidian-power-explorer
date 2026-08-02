@@ -14,5 +14,5 @@
 		"inlineSources": true,
 		"allowJs": true
 	},
-	"include": ["main.ts", "order.ts", "tests.ts"]
+	"include": ["src/**/*.ts"]
 }

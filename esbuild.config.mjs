@@ -4,7 +4,7 @@ import process from "process";
 const prod = process.argv[2] === "production";
 
 const ctx = await esbuild.context({
-	entryPoints: ["main.ts"],
+	entryPoints: ["src/main.ts"],
 	bundle: true,
 	external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", "node:*"],
 	format: "cjs",
