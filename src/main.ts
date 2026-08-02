@@ -380,6 +380,23 @@ type DragState = {
 	intoFolder: TFolder | null;
 };
 
+/** The sliver of pdf.js this uses. loadPdfJs() is typed any, which makes every
+ *  call through it unchecked; naming the shape restores that. */
+interface PdfTextContent {
+	items: { str?: string }[];
+}
+interface PdfPage {
+	getTextContent(): Promise<PdfTextContent>;
+}
+interface PdfDocument {
+	numPages: number;
+	getPage(n: number): Promise<PdfPage>;
+	destroy?: () => void;
+}
+interface PdfJs {
+	getDocument(src: { data: ArrayBuffer }): { promise: Promise<PdfDocument> };
+}
+
 export default class PowerExplorerPlugin extends Plugin {
 	settings: PowerExplorerSettings = DEFAULT_SETTINGS;
 	/** The vault-wide full-text index behind Search everywhere. */
@@ -622,7 +639,7 @@ export default class PowerExplorerPlugin extends Plugin {
 					this.settings.expandedNbs = [...this.expandedNbs];
 					this.settings.colors = renamePathKeyed(this.settings.colors, oldPath, f.path);
 					this.settings.icons = renamePathKeyed(this.settings.icons, oldPath, f.path);
-					this.settings.folderSort = renamePathKeyed(this.settings.folderSort, oldPath, f.path) as Record<string, SortMode>;
+					this.settings.folderSort = renamePathKeyed(this.settings.folderSort, oldPath, f.path);
 					this.settings.pageTemplates = renamePathKeyed(this.settings.pageTemplates, oldPath, f.path);
 					this.settings.folderTemplates = renamePathKeyed(this.settings.folderTemplates, oldPath, f.path);
 					// the remembered/active section follows its folder, instead of
@@ -665,7 +682,7 @@ export default class PowerExplorerPlugin extends Plugin {
 					this.settings.expandedNbs = [...this.expandedNbs];
 					this.settings.colors = removePathKeyed(this.settings.colors, f.path);
 					this.settings.icons = removePathKeyed(this.settings.icons, f.path);
-					this.settings.folderSort = removePathKeyed(this.settings.folderSort, f.path) as Record<string, SortMode>;
+					this.settings.folderSort = removePathKeyed(this.settings.folderSort, f.path);
 					this.settings.pageTemplates = removePathKeyed(this.settings.pageTemplates, f.path);
 					this.settings.folderTemplates = removePathKeyed(this.settings.folderTemplates, f.path);
 					// stop remembering a section whose folder just went away, so the
@@ -1272,7 +1289,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				continue;
 			}
 			this.patchedViews.add(view);
-			this.origSort.set(view as object, orig);
+			this.origSort.set(view, orig);
 			const plugin = this;
 			view.getSortedFolderItems = function (folder: TFolder) {
 				let items: { file?: TAbstractFile }[] = orig.call(this, folder);
@@ -2073,7 +2090,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				(n != null && rank.has(n) ? ranked : rest).push(it);
 			}
 			if (ranked.length) {
-				ranked.sort((a, b) => (rank!.get(a.file!.name) ?? 0) - (rank!.get(b.file!.name) ?? 0));
+				ranked.sort((a, b) => (rank.get(a.file!.name) ?? 0) - (rank.get(b.file!.name) ?? 0));
 				base = this.settings.unranked === "top" ? [...rest, ...ranked] : [...ranked, ...rest];
 			}
 		}
@@ -2114,7 +2131,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		let base: { file?: TAbstractFile }[] | null = null;
 		for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
 			const view = leaf.view as unknown as ExplorerView;
-			const orig = this.origSort.get(view as object);
+			const orig = this.origSort.get(view);
 			if (orig) {
 				base = orig.call(view, folder);
 				break;
@@ -2137,7 +2154,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				(f) => f.name,
 				(f) => f instanceof TFolder,
 				(f) => (f instanceof TFile ? f.stat : null)
-			).map((c) => ({ file: c as TAbstractFile }));
+			).map((c) => ({ file: c }));
 		if (this.hiddenSet.size && !this.showHidden) {
 			items = items.filter((it) => !(it.file instanceof TFolder) || !this.hiddenSet.has(it.file.path));
 		}
@@ -2180,7 +2197,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	private visibleNames(folder: TFolder): string[] {
 		for (const leaf of this.app.workspace.getLeavesOfType("file-explorer")) {
 			const view = leaf.view as unknown as ExplorerView;
-			const orig = this.origSort.get(view as object);
+			const orig = this.origSort.get(view);
 			if (orig) {
 				return this.orderItems(folder, orig.call(view, folder))
 					.map((it) => it.file?.name ?? "")
@@ -2691,7 +2708,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				sectionChildren: section.children.length,
 				sectionEntries: entryCount,
 				rankCacheSize: this.rankCache.size,
-				sortHookPatched: !!explorer && this.patchedViews.has(explorer as object),
+				sortHookPatched: !!explorer && this.patchedViews.has(explorer),
 			},
 			timingsMs: {
 				sortRootChildren: +(t1 - t0).toFixed(2),
@@ -3086,7 +3103,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		rebuild();
 		if (filterInput) {
 			filterInput.addEventListener("input", () => {
-				this.pagesFilter = filterInput!.value;
+				this.pagesFilter = filterInput.value;
 				rebuild();
 			});
 			filterInput.focus();
@@ -3603,7 +3620,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			}
 		};
 		filterInput?.addEventListener("input", () => {
-			this.pagesFilter = filterInput!.value;
+			this.pagesFilter = filterInput.value;
 			rebuildList();
 		});
 		more.addEventListener("click", renderChunk);
@@ -3892,8 +3909,8 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *  `filename` for what it names the pages it makes, and `folders` for where
 	 *  it's offered. The original `pe-icon`/`pe-desc` names still work. */
 	templateMeta(f: TFile): { icon: string; desc: string; filename: string; folders: string[]; destination: string; unique: unknown; ask: unknown } {
-		const fm = this.app.metadataCache.getFileCache(f)?.frontmatter as Record<string, unknown> | undefined;
-		const pick = (a: string, b: string) => (typeof fm?.[a] === "string" ? (fm[a] as string) : typeof fm?.[b] === "string" ? (fm[b] as string) : "");
+		const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+		const pick = (a: string, b: string) => (typeof fm?.[a] === "string" ? (fm[a]) : typeof fm?.[b] === "string" ? (fm[b]) : "");
 		return {
 			icon: pick("icon", "pe-icon"),
 			desc: pick("description", "pe-desc"),
@@ -4026,7 +4043,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	/** Write the chosen icon into a template's frontmatter, retiring the legacy
 	 *  pe-icon key if it was there. */
 	async setTemplateIcon(file: TFile, value: string) {
-		await this.app.fileManager.processFrontMatter(file, (fm) => {
+		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
 			if (value) fm.icon = value;
 			else delete fm.icon;
 			delete fm["pe-icon"];
@@ -4812,10 +4829,10 @@ export default class PowerExplorerPlugin extends Plugin {
 		}
 		const container = el.closest<HTMLElement>(".nav-files-container");
 		if (!container) return;
-		let title = el!.closest<HTMLElement>(".nav-file-title[data-path], .nav-folder-title[data-path]");
+		let title = el.closest<HTMLElement>(".nav-file-title[data-path], .nav-folder-title[data-path]");
 		if (!title) {
 			// gaps and indent padding count as their enclosing row
-			const block = el!.closest<HTMLElement>(".nav-folder, .nav-file");
+			const block = el.closest<HTMLElement>(".nav-folder, .nav-file");
 			title = block?.querySelector<HTMLElement>(":scope > .nav-folder-title[data-path], :scope > .nav-file-title[data-path]") ?? null;
 		}
 		if (!title) {
@@ -5433,16 +5450,16 @@ class SearchService {
 	 *  giant PDF can't swallow the index. */
 	private async pdfChunks(f: TFile): Promise<Chunk[]> {
 		const buf = await this.app.vault.readBinary(f);
-		const pdfjs = await loadPdfJs();
+		const pdfjs = (await loadPdfJs()) as PdfJs;
 		const pdf = await pdfjs.getDocument({ data: buf }).promise;
 		const out: Chunk[] = [];
 		try {
-			const pages = Math.min(pdf.numPages as number, 300);
+			const pages = Math.min(pdf.numPages, 300);
 			let total = 0;
 			for (let p = 1; p <= pages && total < 500_000; p++) {
 				const page = await pdf.getPage(p);
 				const tc = await page.getTextContent();
-				const text = (tc.items as { str?: string }[])
+				const text = tc.items
 					.map((it) => it.str ?? "")
 					.join(" ")
 					.replace(/\s+/g, " ")
@@ -6657,7 +6674,7 @@ class IconPickerModal extends Modal {
 	constructor(
 		private plugin: PowerExplorerPlugin,
 		private current: string,
-		private onPick: (value: string) => void
+		private onPick: (value: string) => void | Promise<void>
 	) {
 		super(plugin.app);
 	}
@@ -6705,24 +6722,28 @@ class IconPickerModal extends Modal {
 
 	private async upload() {
 		const input = createEl("input", { attr: { type: "file", accept: "image/*" } });
-		input.addEventListener("change", async () => {
-			const file = input.files?.[0];
-			if (!file) return;
-			try {
-				const buf = await file.arrayBuffer();
-				const path = await this.app.fileManager.getAvailablePathForAttachment(file.name);
-				const tf = await this.app.vault.createBinary(path, buf);
-				this.pick(`[[${tf.path}]]`);
-			} catch {
-				new Notice("Power Explorer: couldn't import that image.");
-			}
+		// a DOM listener cannot be async, so the import runs as its own task and
+		// reports failure itself; nothing upstream is waiting on it
+		input.addEventListener("change", () => {
+			void (async () => {
+				const file = input.files?.[0];
+				if (!file) return;
+				try {
+					const buf = await file.arrayBuffer();
+					const path = await this.app.fileManager.getAvailablePathForAttachment(file.name);
+					const tf = await this.app.vault.createBinary(path, buf);
+					this.pick(`[[${tf.path}]]`);
+				} catch {
+					new Notice("Power Explorer: couldn't import that image.");
+				}
+			})();
 		});
 		input.click();
 	}
 
 	private pick(value: string) {
 		this.close();
-		this.onPick(value);
+		void this.onPick(value);
 	}
 
 	onClose() {
@@ -6751,7 +6772,7 @@ class PageTemplateGallery extends Modal {
 	constructor(
 		private plugin: PowerExplorerPlugin,
 		private folder: TFolder,
-		private onPick: (tpl: TFile | null) => void
+		private onPick: (tpl: TFile | null) => void | Promise<void>
 	) {
 		super(plugin.app);
 		this.defaultPath = plugin.templateForFolder(folder)?.path ?? null;
@@ -6891,7 +6912,7 @@ class PageTemplateGallery extends Modal {
 
 	private choose(tpl: TFile | null) {
 		this.close();
-		this.onPick(tpl);
+		void this.onPick(tpl);
 	}
 
 	onClose() {

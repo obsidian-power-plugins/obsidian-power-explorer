@@ -32,8 +32,8 @@ import {
 	renameInOrders,
 	renameInRecents,
 	renamePathKeyed,
-} from "./order";
-import { applyAnswers, askFields, dateKeyIn, folderScopes, formatDate, previousDatedName, renderBody, renderBodyAt, renderName, renderTokens, sanitizeFilename, shiftDate, templateRank, unfinishedTasks, uniqueMatch, uniqueName } from "./template";
+} from "../src/order";
+import { applyAnswers, askFields, dateKeyIn, folderScopes, formatDate, previousDatedName, renderBody, renderBodyAt, renderName, renderTokens, sanitizeFilename, shiftDate, templateRank, unfinishedTasks, uniqueMatch, uniqueName } from "../src/template";
 
 // --- rangeSelect (multi-select) ---
 const ORDER = ["a.md", "b.md", "c.md", "d.md"];
@@ -491,7 +491,7 @@ eq(drillDirection(R, "/", R), "pop", "leaving Recent Pages is a pop");
 eq(drillDirection("a", "a", R), null, "same section means no move");
 
 // ---- search engine (search.ts) ----
-import { VaultIndex, chunkNote, editorMatchRanges, makeSnippet, tokenize, type DocInput } from "./search";
+import { VaultIndex, chunkNote, editorMatchRanges, makeSnippet, tokenize, type DocInput } from "../src/search";
 
 // --- editorMatchRanges (jump-to-match highlighting) ---
 eq(editorMatchRanges("The budget report", ["budget"]), [[4, 10]], "one term, one range at the word");
@@ -650,7 +650,7 @@ eq(ix.search(""), [], "an empty query returns nothing");
 eq(ix.search("   "), [], "a blank query returns nothing");
 
 // --- review-pass regressions ---
-import { isUnder } from "./order";
+import { isUnder } from "../src/order";
 
 eq(isUnder("a/b/c.md", "a/b"), true, "a nested file is under its folder");
 eq(isUnder("a/bc/d.md", "a/b"), false, "sibling name prefixes are not containment");

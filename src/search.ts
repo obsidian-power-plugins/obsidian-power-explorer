@@ -210,7 +210,7 @@ export class VaultIndex {
 			for (const t of tokens) {
 				let post = this.postings.get(t);
 				if (!post) {
-					this.postings.set(t, (post = new Map()));
+					this.postings.set(t, (post = new Map<number, number>()));
 					this.termsDirty = true; // only a genuinely new dictionary word re-sorts
 				}
 				post.set(id, (post.get(id) ?? 0) + 1);
