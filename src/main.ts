@@ -180,7 +180,7 @@ interface PowerExplorerSettings {
 	searchEnabled: boolean;
 	/** Index the text layer of PDFs (hits open the PDF at the page). */
 	searchPdfs: boolean;
-	/** Index OCR text of images via the Text Extractor plugin; hits land on
+	/** Index OCR text of images via a companion OCR plugin; hits land on
 	 *  the note embedding the image, at the embed's line. */
 	searchImages: boolean;
 	/** Comma-separated folder paths the search index skips. */
@@ -281,8 +281,12 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 	welcomed: false,
 };
 
-/** Image types the OCR pipeline covers (what Text Extractor can read). */
+/** Image types the OCR pipeline covers (what a provider below can read). */
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp"]);
+
+/** The companion plugins that can read text out of an image, best first. Both
+ *  expose the same `extractText`, so whichever is installed simply answers. */
+const OCR_PROVIDERS = ["powerextract", "text-extractor"] as const;
 
 /** Image types usable as a template icon (SVG and GIF included, they make fine
  *  little glyphs even though the OCR pipeline skips them). */
@@ -5549,18 +5553,28 @@ class SearchService {
 		}
 	}
 
-	/* ---- image OCR (via the Text Extractor plugin) ---- */
+	/* ---- image OCR (via a companion plugin) ---- */
 
-	/** Text Extractor's cross-plugin API, when the plugin is installed and
-	 *  enabled. The community-standard OCR provider (OmniSearch uses the same
-	 *  one); it keeps its own persistent extraction cache. */
+	/** Whichever OCR provider is installed, in order of preference. Both expose
+	 *  the same `extractText` and both keep their own extraction cache, so the
+	 *  one that answers is an implementation detail from here.
+	 *
+	 *  Power Extract is preferred: it reads through the OCR built into Windows
+	 *  rather than downloading an engine, and it is markedly better at the
+	 *  screenshots this index is mostly made of. Text Extractor stays in the
+	 *  list because a vault that already has it should not lose image search
+	 *  the day this preference changed. */
 	private textExtractor(): { extractText: (f: TFile) => Promise<string> } | null {
-		const api = (
+		const plugins = (
 			this.app as unknown as {
 				plugins?: { plugins?: Record<string, { api?: { extractText?: (f: TFile) => Promise<string> } }> };
 			}
-		).plugins?.plugins?.["text-extractor"]?.api;
-		return api && typeof api.extractText === "function" ? { extractText: (f) => api.extractText!(f) } : null;
+		).plugins?.plugins;
+		for (const id of OCR_PROVIDERS) {
+			const api = plugins?.[id]?.api;
+			if (api && typeof api.extractText === "function") return { extractText: (f) => api.extractText!(f) };
+		}
+		return null;
 	}
 
 	/** Add a note to the index with its embedded images' OCR text attached live
@@ -5691,7 +5705,7 @@ class SearchService {
 		const te = this.textExtractor();
 		if (!te) {
 			new Notice(
-				`Power Explorer: ${pending.length} image(s) are waiting for OCR. Install and enable the "Text Extractor" community plugin to make screenshots searchable.`,
+				`Power Explorer: ${pending.length} image(s) are waiting for OCR. Install and enable "Power Extract" to make screenshots searchable.`,
 				10000
 			);
 			return;
@@ -8017,7 +8031,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		search.push({
 			name: "Search image text (OCR)",
 			desc: "Make screenshots and photos searchable by the text inside them.",
-			help: 'The OCR runs through the free "Text Extractor" community plugin, install and enable it once. Each image is read in the background exactly once and cached; a search hit opens the note embedding the image, right at its spot.',
+			help: 'The reading is done by the "Power Extract" companion plugin, install and enable it once. Each image is read in the background exactly once and cached; a search hit opens the note embedding the image, right at its spot. An existing Text Extractor install is still used if Power Extract is not there.',
 			build: (s) => {
 				s.addToggle((t) =>
 					t.setValue(this.plugin.settings.searchImages).onChange((v) => {

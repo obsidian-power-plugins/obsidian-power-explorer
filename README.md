@@ -161,7 +161,7 @@ Matches cover titles, aliases, headings, body text, tags, and folder names. With
 
 ### Images are searchable too
 
-The other half of the search magic: text inside screenshots. With **Search image text (OCR)** on and the free [Text Extractor](https://obsidian.md/plugins?id=text-extractor) community plugin installed, Power Explorer reads every image in the background exactly once (progress in the status bar; the sweep resumes where it left off if you quit) and caches the text by file. From then on, searching finds words inside your screenshots, and a hit opens the note that embeds the image, scrolled right to it. Images nothing embeds show up as their own results with a type badge. Without Text Extractor, everything else works and a one-time notice tells you how many images are waiting.
+The other half of the search magic: text inside screenshots. With **Search image text (OCR)** on and the [Power Extract](https://github.com/obsidian-power-plugins/power-extract) companion plugin installed, Power Explorer reads every image in the background exactly once (progress in the status bar; the sweep resumes where it left off if you quit) and caches the text by file. From then on, searching finds words inside your screenshots, and a hit opens the note that embeds the image, scrolled right to it. Images nothing embeds show up as their own results with a type badge. Without it, everything else works and a one-time notice tells you how many images are waiting.
 
 ### Filtering a section by content
 
@@ -178,7 +178,7 @@ When the companion Power Assistant plugin is installed, an **Ask AI** chip appea
 - **Clear all**: remove every stored manual order.
 - **Search everywhere**: the vault-wide search index and modal (on by default).
 - **Search PDF text**: index PDF text layers; hits open the PDF at the page.
-- **Search image text (OCR)**: index text inside images via the Text Extractor plugin; hits open the embedding note at the image.
+- **Search image text (OCR)**: index text inside images via the Power Extract plugin; hits open the embedding note at the image.
 - **Folders search skips**: comma-separated folder paths the index ignores.
 
 ## Coming from OneNote
