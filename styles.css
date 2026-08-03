@@ -84,16 +84,6 @@ body.pe-dragging .nav-files-container {
 	grid-column: 1 / -1;
 }
 
-/* While a Power Desk tab is active, a calendar or inbox is not a page: the
-   pages pane steps aside and the tree keeps the whole (narrowed) sidebar. */
-.workspace-leaf-content.pe-sections.pe-desk-solo {
-	grid-template-columns: minmax(0, 1fr);
-}
-
-.pe-desk-solo .pe-pages {
-	display: none;
-}
-
 /* the pinned Recent Pages entry sits above the folder tree */
 .pe-recent-row {
 	grid-row: 2;

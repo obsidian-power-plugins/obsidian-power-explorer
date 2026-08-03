@@ -112,9 +112,6 @@ interface PowerExplorerSettings {
 	 *  phone-style drill. */
 	desktopPane: PaneMode;
 	sectionWidth: number;
-	/** While a Power Desk tab is active, the pages pane steps aside and the
-	 *  sidebar narrows so the calendar or inbox gains the width. */
-	deskSolo: boolean;
 	lastSection: string | null;
 	/** Folder paths hidden from the tree until temporarily shown. */
 	hidden: string[];
@@ -243,7 +240,6 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 	sectionsLayout: false,
 	desktopPane: "tree",
 	sectionWidth: 240,
-	deskSolo: true,
 	lastSection: null,
 	hidden: [],
 	collapsedGroups: [],
@@ -597,26 +593,14 @@ export default class PowerExplorerPlugin extends Plugin {
 		// Sidebar views can load deferred; catch the explorer whenever it
 		// actually materializes so the sections pane is never missing.
 		this.registerEvent(
-			this.app.workspace.on("active-leaf-change", (leaf) => {
+			this.app.workspace.on("active-leaf-change", () => {
 				this.patchExplorers();
 				this.applySections();
-				this.applyDeskSolo(leaf ?? null);
 			})
 		);
 		// A resize can move the app across the phone threshold (iPad split
 		// view, mobile emulation); applySections rebuilds only on a mode flip.
 		this.registerEvent(this.app.workspace.on("resize", () => this.applySections()));
-		// while the pages pane is stepped aside for Power Desk, any click in
-		// the remaining panel brings it back (and then does what it clicked)
-		this.registerDomEvent(
-			document,
-			"pointerdown",
-			(e) => {
-				if (!this.sectionsApplied?.hasClass("pe-desk-solo")) return;
-				if (e.target instanceof Node && this.sectionsApplied.contains(e.target)) this.exitDeskSolo();
-			},
-			true
-		);
 
 		// Keep stored orders in step with vault changes. Both handlers are
 		// O(size of the orders map), which is tiny (only arranged folders).
@@ -2588,58 +2572,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.renderPages();
 	}
 
-	/* ------- Power Desk solo: the pages pane steps aside for desk tabs ------- */
-
-	/** A calendar or inbox tab is not a page, so nothing in the pages pane
-	 *  applies while one is active: it hides, the sidebar narrows to the
-	 *  tree, and the desk view gains exactly the pane's width. Clicking the
-	 *  remaining panel brings the pages back, which is also how a page gets
-	 *  picked. */
-	private deskSavedDock: number | null = null;
-
-	private deskSoloWanted(leaf: unknown): boolean {
-		if (!this.settings.deskSolo || !this.settings.sectionsLayout) return false;
-		if (this.paneMode === "drill") return false; // the pages pane IS the panel there
-		const view = (leaf as { view?: { getViewType?: () => string } } | null)?.view;
-		const type = view?.getViewType?.();
-		if (type !== "power-calendar" && type !== "power-calendar-mail") return false;
-		// main-area tabs only: a desk view parked in a sidebar changes nothing
-		const root = (leaf as { getRoot?: () => unknown } | null)?.getRoot?.();
-		const rootSplit = (this.app.workspace as unknown as { rootSplit?: unknown }).rootSplit;
-		return !root || !rootSplit || root === rootSplit;
-	}
-
-	private applyDeskSolo(leaf: unknown) {
-		const container = this.sectionsApplied;
-		if (!container) return;
-		const want = this.deskSoloWanted(leaf);
-		if (want === container.hasClass("pe-desk-solo")) return;
-		if (!want) {
-			this.exitDeskSolo();
-			return;
-		}
-		container.addClass("pe-desk-solo");
-		const dock = (this.app.workspace as unknown as { leftSplit?: { containerEl?: HTMLElement } }).leftSplit?.containerEl;
-		if (dock && dock.clientWidth > 0) {
-			const treeW = (this.settings.sectionWidth || 240) + 12;
-			if (dock.clientWidth > treeW) {
-				this.deskSavedDock = dock.clientWidth;
-				dock.style.width = treeW + "px";
-			}
-		}
-	}
-
-	exitDeskSolo() {
-		const container = this.sectionsApplied;
-		if (!container?.hasClass("pe-desk-solo")) return;
-		container.removeClass("pe-desk-solo");
-		const dock = (this.app.workspace as unknown as { leftSplit?: { containerEl?: HTMLElement } }).leftSplit?.containerEl;
-		if (dock && this.deskSavedDock != null) dock.style.width = this.deskSavedDock + "px";
-		this.deskSavedDock = null;
-	}
-
 	private removeSections() {
-		this.exitDeskSolo();
 		this.sectionsApplied?.removeClass("pe-sections");
 		this.sectionsApplied?.removeClass("pe-notebooks");
 		this.sectionsApplied?.removeClass("pe-drill");
@@ -7493,19 +7426,6 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 						this.plugin.settings.showRecent = v;
 						void this.plugin.persistSettings();
 						this.plugin.reapplySections();
-					})
-				);
-			},
-		});
-		layout.push({
-			name: "Power Desk borrows the pages pane",
-			desc: "A calendar or inbox tab is not a page: while one is active, the pages panel hides and the sidebar narrows so the view gets the width. Click the folder panel to bring the pages back.",
-			build: (s) => {
-				s.addToggle((t) =>
-					t.setValue(this.plugin.settings.deskSolo).onChange((v) => {
-						this.plugin.settings.deskSolo = v;
-						void this.plugin.persistSettings();
-						if (!v) this.plugin.exitDeskSolo();
 					})
 				);
 			},
