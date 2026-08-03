@@ -491,7 +491,51 @@ eq(drillDirection(R, "/", R), "pop", "leaving Recent Pages is a pop");
 eq(drillDirection("a", "a", R), null, "same section means no move");
 
 // ---- search engine (search.ts) ----
-import { VaultIndex, chunkNote, editorMatchRanges, makeSnippet, tokenize, type DocInput } from "../src/search";
+import { VaultIndex, chunkNote, editorMatchRanges, makeSnippet, persistOverdue, tokenize, type DocInput } from "../src/search";
+
+// --- the ceiling on the index-write debounce ---
+{
+	const MAX = 30_000;
+	eq(persistOverdue(1000, null, MAX), false, "nothing waiting is never overdue");
+	eq(persistOverdue(1000, 1000, MAX), false, "a change made this instant can wait");
+	eq(persistOverdue(30_999, 1000, MAX), false, "and can keep waiting right up to the ceiling");
+	eq(persistOverdue(31_000, 1000, MAX), true, "at the ceiling it has waited long enough");
+	eq(persistOverdue(500_000, 1000, MAX), true, "and well past it, obviously");
+
+	// The regression this exists for. The OCR sweep asks for a write every 25
+	// images; the debounce is 10s and every ask resets it. Walk the sweep at
+	// both recognizer speeds and count how many writes actually land.
+	const DEBOUNCE = 10_000;
+	const sweep = (msPerCheckpoint: number, checkpoints: number) => {
+		let dirtySince: number | null = null;
+		let lastAsk = 0;
+		let writes = 0;
+		for (let i = 1; i <= checkpoints; i++) {
+			const now = i * msPerCheckpoint;
+			// the debounce fires only if nothing asked again within its window
+			if (dirtySince != null && now - lastAsk >= DEBOUNCE) {
+				writes++;
+				dirtySince = null;
+			}
+			if (dirtySince == null) dirtySince = now;
+			if (persistOverdue(now, dirtySince, MAX)) {
+				writes++;
+				dirtySince = null;
+			}
+			lastAsk = now;
+		}
+		return writes;
+	};
+	// tesseract: 25 images took well over a minute, so the debounce expired
+	// between checkpoints and every one of them wrote
+	ok(sweep(75_000, 20) >= 19, "at the old recognizer's pace every checkpoint reached disk");
+	// power extract: 25 images in under a second. Before the ceiling this was
+	// zero writes across the whole sweep, which is the bug.
+	const fast = sweep(875, 600);
+	ok(fast > 0, "at the new pace the sweep still checkpoints instead of writing nothing");
+	// once every MAX_PERSIST_AGE, near enough: 600 checkpoints * 875ms is 525s
+	ok(fast >= 15 && fast <= 20, `and does so about every ${MAX / 1000}s (got ${fast} over 525s)`);
+}
 
 // --- editorMatchRanges (jump-to-match highlighting) ---
 eq(editorMatchRanges("The budget report", ["budget"]), [[4, 10]], "one term, one range at the word");

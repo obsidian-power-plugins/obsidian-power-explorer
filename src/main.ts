@@ -1,7 +1,7 @@
 import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type SettingDefinitionItem, type SettingDefinitionPage, type SettingDefinitionRender, TAbstractFile, TFile, TFolder, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
-import { Chunk, ChunkKind, MAX_CHUNK, SearchHit, VaultIndex, chunkNote, editorMatchRanges } from "./search";
+import { Chunk, ChunkKind, MAX_CHUNK, SearchHit, VaultIndex, chunkNote, editorMatchRanges, persistOverdue } from "./search";
 
 /** Jump-to-match: a CM6 layer that highlights the search terms in an opened
  *  note. setMatchHl paints ranges, clearMatchHl removes them, and any user
@@ -287,6 +287,16 @@ const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp"]);
 /** The companion plugins that can read text out of an image, best first. Both
  *  expose the same `extractText`, so whichever is installed simply answers. */
 const OCR_PROVIDERS = ["powerextract", "text-extractor"] as const;
+
+/** The longest a change may sit unwritten, however busy the index still is.
+ *  Thirty seconds bounds what an interrupted sweep has to redo without making
+ *  a 27 MB serialization a routine event. */
+const MAX_PERSIST_AGE = 30_000;
+
+/** How long an idle write may wait for an idle frame before it stops waiting.
+ *  A minimized window never offers one, and that is precisely when a long
+ *  sweep is left running. */
+const IDLE_WRITE_DEADLINE = 2_000;
 
 /** Image types usable as a template icon (SVG and GIF included, they make fine
  *  little glyphs even though the OCR pipeline skips them). */
@@ -5179,6 +5189,12 @@ class SearchService {
 	 *  can reconcile the images' standalone docs (session-only, rebuilt free). */
 	private noteImages: Record<string, string[]> = {};
 	private persistTimer: number | null = null;
+	/** When the oldest currently-unwritten change happened, or null when
+	 *  everything is on disk. Drives the ceiling on the write debounce. */
+	private dirtySince: number | null = null;
+	/** A write is in flight. Guards against a fast sweep starting a second
+	 *  serialization of a 27 MB index on top of the first. */
+	private persisting = false;
 	private statusEl: HTMLElement | null = null;
 	/** The store has changes search-index.json hasn't seen yet. */
 	private dirty = false;
@@ -5523,12 +5539,32 @@ class SearchService {
 	private schedulePersist() {
 		this.dirty = true;
 		if (!this.ready) return; // the initial build persists once, at its end
+		if (this.dirtySince == null) this.dirtySince = Date.now();
+		// Past the ceiling, write now rather than reset the timer yet again. See
+		// persistOverdue() for what a reset-on-every-change debounce does when
+		// the changes outrun it.
+		if (persistOverdue(Date.now(), this.dirtySince, MAX_PERSIST_AGE)) {
+			if (this.persistTimer != null) {
+				window.clearTimeout(this.persistTimer);
+				this.persistTimer = null;
+			}
+			this.dirtySince = null; // the clock restarts from the next change
+			void this.persist();
+			return;
+		}
 		if (this.persistTimer != null) window.clearTimeout(this.persistTimer);
 		this.persistTimer = window.setTimeout(() => {
 			this.persistTimer = null;
 			// serialize in an idle frame so the write never lands mid-interaction
-			const ric = (window as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-			if (ric) ric(() => void this.persist());
+			const ric = (
+				window as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }
+			).requestIdleCallback;
+			// ...but with a deadline. Idle callbacks are starved in a window that
+			// is minimized or in the background, which is exactly where a long
+			// sweep is left to run, and an idle frame that never arrives is a
+			// write that never happens. The timeout makes the browser run it
+			// anyway once it has waited long enough.
+			if (ric) ric(() => void this.persist(), { timeout: IDLE_WRITE_DEADLINE });
 			else void this.persist();
 		}, 10_000);
 	}
@@ -5545,14 +5581,19 @@ class SearchService {
 	}
 
 	private async persist() {
+		if (this.persisting) return; // one at a time; the dirty flag survives to the next
+		this.persisting = true;
 		try {
 			await this.app.vault.adapter.write(
 				this.storePath(),
 				JSON.stringify({ v: 2, docs: this.store, images: this.images })
 			);
 			this.dirty = false;
+			this.dirtySince = null;
 		} catch (e) {
 			console.warn("Power Explorer: could not save the search index", e);
+		} finally {
+			this.persisting = false;
 		}
 	}
 
@@ -5714,6 +5755,11 @@ class SearchService {
 	 * cache persists as it goes, so a quit mid-sweep resumes where it left off.
 	 * Runs after the text index is ready; touched notes reindex in batches so
 	 * screenshots become findable while the sweep is still running.
+	 *
+	 * "Persists as it goes" depends on the checkpoint below actually reaching
+	 * disk, which is not free: it asks for a write every 25 images, and a fast
+	 * enough recognizer can ask faster than the write debounce ever expires.
+	 * MAX_PERSIST_AGE is what keeps this sentence true; see persistOverdue().
 	 */
 	private async ocrBackfill() {
 		const s = this.plugin.settings;

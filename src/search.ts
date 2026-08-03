@@ -626,3 +626,28 @@ export function makeSnippet(
 	if (start + 170 < clean.length) excerpt = excerpt + "…";
 	return { text: excerpt, ranges: findRanges(excerpt, finder) };
 }
+
+/**
+ * Has a pending index write been put off long enough that it has to happen now?
+ *
+ * The write is debounced, and the debounce is reset by every new change. That
+ * is the right shape while changes trickle in, and the wrong one the moment
+ * they arrive faster than the delay: each reset cancels the last, and a debounce
+ * that is never allowed to expire is not a delay at all, it is a cancellation.
+ *
+ * That is not hypothetical. The OCR sweep checkpoints every 25 images, which
+ * took well over a minute with the old recognizer and comfortably outlasted the
+ * ten-second debounce. A recognizer forty times faster brought it under a
+ * second, so the timer was reset before it could ever fire and a thirteen
+ * thousand image sweep wrote nothing until it was completely finished. The
+ * method promised in its own docstring that the sweep resumed where it left
+ * off; it had quietly stopped being true, and a sweep interrupted anywhere
+ * would have started again from nothing.
+ *
+ * So the debounce gets a ceiling. Past it the write happens on the spot,
+ * however busy things still are, which is what makes it a delay again.
+ */
+export function persistOverdue(now: number, dirtySince: number | null, maxAgeMs: number): boolean {
+	if (dirtySince == null) return false; // nothing is waiting
+	return now - dirtySince >= maxAgeMs;
+}
