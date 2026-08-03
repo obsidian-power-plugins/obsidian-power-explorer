@@ -78,6 +78,10 @@ A pinned **Recent Pages** entry sits above the folder tree. Click it and the pag
 
 The locate button (crosshair icon) in the pages pane header jumps to the note you are editing: it switches to that note's section, expands its notebook and any page groups on the way, scrolls the row into view, and flashes it, in every layout including the phone drill. The same button sits on the explorer's own header, standing in for the separate Reveal Active File Button plugin, and the command **Reveal active page** takes a hotkey. In the full-tree layout it also runs Obsidian's native reveal so the tree expands alongside.
 
+### One tab per page
+
+Clicking a page steps to the tab it is already open in, wherever that tab is, rather than opening a second copy of it in the tab you happen to be standing in. Two copies of a note is two scroll positions and two undo histories, with your edits landing in whichever one you looked at last. The same holds for Recent Pages, for search results, and for Enter on a selected row. Right-click a page for **Open in new tab** when a second copy is what you actually want, and Ctrl/Cmd+Enter still opens a search hit in a new tab. A note you deliberately popped out into its own window is left where it is, as are sidebar previews.
+
 ### The explorer toolbar
 
 **Buttons in the explorer toolbar** in settings is the whole row, the way the ribbon's own configuration is: **add any command** from the command palette, turn off the ones you do not use, and **drag them into the order you want** by the grip at the left. Obsidian's own buttons are in the list too.

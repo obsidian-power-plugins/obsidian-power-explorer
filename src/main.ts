@@ -1,4 +1,4 @@
-import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type SettingDefinitionItem, type SettingDefinitionPage, type SettingDefinitionRender, TAbstractFile, TFile, TFolder, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
+import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type SettingDefinitionItem, type SettingDefinitionPage, type SettingDefinitionRender, TAbstractFile, TFile, TFolder, type WorkspaceLeaf, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
 import { Chunk, ChunkKind, MAX_CHUNK, SearchHit, VaultIndex, chunkNote, editorMatchRanges, persistOverdue } from "./search";
@@ -2333,6 +2333,70 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.enforceEditMode();
 	}
 
+	/**
+	 * The main-area tab already showing this path, if there is one.
+	 *
+	 * Asked through `getViewState()` rather than `leaf.view.file`, because every
+	 * tab you are not standing in is deferred since 1.7.2: its view is a stand-in
+	 * that holds no file, and reaching for one to ask would load every tab in the
+	 * window. The view state carries the path whether the view is real or not.
+	 *
+	 * Main-area leaves only. A note showing in a sidebar is not a tab, and a note
+	 * deliberately popped out into a window of its own should not have this pane
+	 * pulling focus to another window behind your back.
+	 */
+	private openLeafFor(path: string): WorkspaceLeaf | null {
+		const hits: WorkspaceLeaf[] = [];
+		this.app.workspace.iterateRootLeaves((leaf) => {
+			const open = leaf.getViewState().state?.file;
+			if (typeof open === "string" && open === path) hits.push(leaf);
+		});
+		return hits[0] ?? null;
+	}
+
+	/**
+	 * Step to the tab already holding this path, if there is one.
+	 *
+	 * The open itself is left to the caller: an `openLinkText` that follows lands
+	 * in the tab this just made active, which is how the attachment routes keep
+	 * Obsidian's own subpath handling and still stop short of a second copy.
+	 */
+	async focusOpenTab(path: string): Promise<void> {
+		const open = this.openLeafFor(path);
+		if (!open) return;
+		await this.app.workspace.revealLeaf(open);
+		this.app.workspace.setActiveLeaf(open, { focus: true });
+	}
+
+	/**
+	 * Show a page: step to the tab already holding it, or open it where you are.
+	 *
+	 * Every route from this pane into a note goes through here. `getLeaf(false)`
+	 * means "the tab I am standing in" and knows nothing about the tab the note is
+	 * already open in, so opening a page from anywhere else hands you a second
+	 * copy of it: two scroll positions, two undo histories, and edits landing in
+	 * whichever one you looked at last. A list of pages should navigate to a note,
+	 * not clone it. Asking for a second copy on purpose is still there, on the
+	 * row's right-click menu.
+	 *
+	 * `eState` rides along both ways, so a search hit that lands on a note that
+	 * was already open still scrolls to its line.
+	 */
+	async showPage(f: TFile, eState?: Record<string, unknown>): Promise<WorkspaceLeaf> {
+		const open = this.openLeafFor(f.path);
+		if (open) {
+			// awaited: the tab was deferred right up until now, and the ephemeral
+			// state below has nothing to scroll until its view actually exists
+			await this.app.workspace.revealLeaf(open);
+			this.app.workspace.setActiveLeaf(open, { focus: true });
+			if (eState) open.setEphemeralState(eState);
+			return open;
+		}
+		const leaf = this.app.workspace.getLeaf(false);
+		await leaf.openFile(f, eState ? { eState } : undefined);
+		return leaf;
+	}
+
 	/** Let Obsidian's Settings window reopen where you left it.
 	 *
 	 *  None of the work is ours. The settings modal already reads its size and
@@ -3096,7 +3160,7 @@ export default class PowerExplorerPlugin extends Plugin {
 					cls: "pe-page-sec",
 					text: f.parent && f.parent.path !== "/" ? f.parent.name : this.app.vault.getName(),
 				});
-				row.addEventListener("click", () => void this.app.workspace.getLeaf(false).openFile(f));
+				row.addEventListener("click", () => void this.showPage(f));
 				row.addEventListener("contextmenu", (ev) => {
 					ev.preventDefault();
 					const menu = new Menu();
@@ -3520,7 +3584,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				if (this.selectedPages.size) this.clearMulti();
 				this.selectAnchor = f.path;
 				this.selectPage(f.path);
-				void this.app.workspace.getLeaf(false).openFile(f);
+				void this.showPage(f);
 			});
 			row.addEventListener("contextmenu", (ev) => {
 				ev.preventDefault();
@@ -3539,6 +3603,15 @@ export default class PowerExplorerPlugin extends Plugin {
 				const sibling = group != null && f.parent?.path !== group.path;
 				const anchorName = group && !sibling ? group.name : f.name;
 				const anchorParent = (group && !sibling ? group.parent : f.parent) ?? this.sectionFolder();
+				// Clicking the row steps to the note wherever it is already open, so a
+				// second copy of it has to be asked for on purpose. This is the asking.
+				menu.addItem((i) =>
+					i
+						.setTitle("Open in new tab")
+						.setIcon("layers")
+						.onClick(() => void this.app.workspace.getLeaf("tab").openFile(f))
+				);
+				menu.addSeparator();
 				menu.addItem((i) =>
 					i.setTitle("New page above").setIcon("arrow-up").onClick(() => void this.newPageAt(anchorParent, anchorName))
 				);
@@ -3704,7 +3777,7 @@ export default class PowerExplorerPlugin extends Plugin {
 				const nf = this.app.vault.getAbstractFileByPath(neighbor);
 				if (!(nf instanceof TFile)) return;
 				this.selectedPage = neighbor;
-				if (wasActive) await this.app.workspace.getLeaf(false).openFile(nf);
+				if (wasActive) await this.showPage(nf);
 			})();
 		}).open();
 	}
@@ -4150,7 +4223,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		if (already) {
 			const f = this.app.vault.getAbstractFileByPath(prefix + already + ".md");
 			if (f instanceof TFile) {
-				await this.app.workspace.getLeaf(false).openFile(f);
+				await this.showPage(f);
 				return f;
 			}
 		}
@@ -4729,7 +4802,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		}
 		if (e.key === "Enter" && cur >= 0) {
 			const f = this.app.vault.getAbstractFileByPath(rows[cur].getAttribute("data-path")!);
-			if (f instanceof TFile) void this.app.workspace.getLeaf(false).openFile(f);
+			if (f instanceof TFile) void this.showPage(f);
 			e.preventDefault();
 		}
 	}
@@ -6301,20 +6374,33 @@ class PowerSearchModal extends Modal {
 	private openTarget(t: OpenTarget, newTab: boolean) {
 		this.close();
 		const lower = t.path.toLowerCase();
-		if (t.kind === "attach" && lower.endsWith(".pdf")) {
-			// the PDF viewer understands #page= subpaths
-			void this.app.workspace.openLinkText(t.path + (t.anchor ? `#page=${t.anchor}` : ""), "", newTab);
-			return;
-		}
 		if (t.kind === "attach" && !lower.endsWith(".md")) {
-			void this.app.workspace.openLinkText(t.path, "", newTab); // a standalone image
+			// The subpath is Obsidian's to parse (the PDF viewer understands #page=),
+			// so these keep going through openLinkText. Stepping to the tab the file
+			// is already in first is enough to stop a second copy: openLinkText with
+			// no new tab asked for lands in whichever tab is active, and that is now
+			// the one holding it.
+			const link = lower.endsWith(".pdf") && t.anchor ? `${t.path}#page=${t.anchor}` : t.path;
+			void (async () => {
+				if (!newTab) await this.plugin.focusOpenTab(t.path);
+				await this.app.workspace.openLinkText(link, "", newTab);
+			})();
 			return;
 		}
 		// notes (body hits AND image text attributed to a note) open at the line
 		const f = this.app.vault.getAbstractFileByPath(t.path);
 		if (f instanceof TFile) {
-			const leaf = this.app.workspace.getLeaf(newTab);
-			void leaf.openFile(f, { eState: { line: t.anchor } }).then(() => {
+			const eState = { line: t.anchor };
+			// Ctrl/Cmd asked for a new tab and gets one; a plain hit goes to the note
+			// wherever it already is, and scrolls that tab to the line.
+			const going = newTab
+				? (async () => {
+						const leaf = this.app.workspace.getLeaf(true);
+						await leaf.openFile(f, { eState });
+						return leaf;
+					})()
+				: this.plugin.showPage(f, eState);
+			void going.then((leaf) => {
 				if (t.terms?.length) this.plugin.highlightMatches(leaf, t.terms, t.anchor);
 			});
 		}
@@ -6953,7 +7039,7 @@ class PageTemplateGallery extends Modal {
 		edit.addEventListener("click", (e) => {
 			e.stopPropagation();
 			this.close();
-			void this.app.workspace.getLeaf(false).openFile(f);
+			void this.plugin.showPage(f);
 		});
 		if (meta.desc) card.createDiv({ cls: "pe-tpl-desc", text: meta.desc });
 		// What this card would call the page, so the naming is visible before
@@ -8115,7 +8201,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 					);
 					s.addButton((b) =>
 						b.setButtonText("Open").onClick(() => {
-							void this.plugin.app.workspace.getLeaf(false).openFile(f);
+							void this.plugin.showPage(f);
 						})
 					);
 				},
