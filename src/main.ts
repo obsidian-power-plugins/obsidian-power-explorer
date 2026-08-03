@@ -281,8 +281,13 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 	welcomed: false,
 };
 
-/** Image types the OCR pipeline covers (what a provider below can read). */
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp"]);
+/** Image types the OCR pipeline covers, which has to be what a provider below
+ *  can actually read. It was narrower than that: bmp and gif were left out
+ *  while Power Extract read both, so those files were never offered to it and
+ *  stayed unsearchable for no reason anyone had decided on. A provider that
+ *  cannot decode one of these answers with an error for that file, which is
+ *  cheaper than a list here that quietly excludes them. */
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp", "bmp", "gif"]);
 
 /** The companion plugins that can read text out of an image, best first. Both
  *  expose the same `extractText`, so whichever is installed simply answers. */
