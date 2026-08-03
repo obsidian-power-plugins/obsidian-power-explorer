@@ -5171,7 +5171,10 @@ class SearchService {
 	private store: Record<string, StoredDoc> = {};
 	/** OCR text per image path, cached by mtime, the expensive part of image
 	 *  search, never re-done for an unchanged file. */
-	private images: Record<string, { mtime: number; text: string }> = {};
+	/** Cached OCR text per image. `by` names the provider that read it, so a
+	 *  change of provider re-reads rather than serving the old one's mistakes
+	 *  forever; absent means Text Extractor, the only one that used to exist. */
+	private images: Record<string, { mtime: number; text: string; by?: string }> = {};
 	/** Each note's embedded images at last index time, so an embed-set change
 	 *  can reconcile the images' standalone docs (session-only, rebuilt free). */
 	private noteImages: Record<string, string[]> = {};
@@ -5564,7 +5567,7 @@ class SearchService {
 	 *  screenshots this index is mostly made of. Text Extractor stays in the
 	 *  list because a vault that already has it should not lose image search
 	 *  the day this preference changed. */
-	private textExtractor(): { extractText: (f: TFile) => Promise<string> } | null {
+	private textExtractor(): { id: string; extractText: (f: TFile) => Promise<string> } | null {
 		const plugins = (
 			this.app as unknown as {
 				plugins?: { plugins?: Record<string, { api?: { extractText?: (f: TFile) => Promise<string> } }> };
@@ -5572,9 +5575,31 @@ class SearchService {
 		).plugins?.plugins;
 		for (const id of OCR_PROVIDERS) {
 			const api = plugins?.[id]?.api;
-			if (api && typeof api.extractText === "function") return { extractText: (f) => api.extractText!(f) };
+			if (api && typeof api.extractText === "function") return { id, extractText: (f) => api.extractText!(f) };
 		}
 		return null;
+	}
+
+	/**
+	 * Is this image's cached text still current?
+	 *
+	 * Not just "is it the same file": also "did the provider that is answering
+	 * now write it". Cached text is keyed on modification time, and swapping OCR
+	 * providers does not touch a single file's mtime, so without the second half
+	 * of this question a vault that has just gained a better recognizer keeps
+	 * serving every word the old one got wrong, forever, and the upgrade appears
+	 * to have done nothing.
+	 *
+	 * Entries written before this field existed came from Text Extractor, which
+	 * was the only provider there had ever been, so that is what a missing value
+	 * means. Naming it keeps a vault that still uses Text Extractor from
+	 * re-reading its whole library to arrive back where it started.
+	 */
+	private imageFresh(f: TFile, providerId: string | undefined): boolean {
+		const cached = this.images[f.path];
+		if (!cached || cached.mtime !== f.stat.mtime) return false;
+		if (providerId === undefined) return true; // nothing installed to re-read it with anyway
+		return (cached.by ?? "text-extractor") === providerId;
 	}
 
 	/** Add a note to the index with its embedded images' OCR text attached live
@@ -5668,12 +5693,12 @@ class SearchService {
 	async ocrImage(f: TFile) {
 		const s = this.plugin.settings;
 		if (!s.searchEnabled || !s.searchImages || !this.indexablePath(f.path)) return;
-		if (this.images[f.path]?.mtime === f.stat.mtime) return;
 		const te = this.textExtractor();
 		if (!te) return;
+		if (this.imageFresh(f, te.id)) return;
 		try {
 			const text = ((await te.extractText(f)) ?? "").trim();
-			this.images[f.path] = { mtime: f.stat.mtime, text };
+			this.images[f.path] = { mtime: f.stat.mtime, text, by: te.id };
 			this.schedulePersist();
 			if (!text) return;
 			const embedders = this.reverseEmbeds().get(f.path) ?? [];
@@ -5693,16 +5718,16 @@ class SearchService {
 	private async ocrBackfill() {
 		const s = this.plugin.settings;
 		if (!s.searchEnabled || !s.searchImages || !Platform.isDesktopApp) return;
+		const te = this.textExtractor();
 		const pending = this.app.vault
 			.getFiles()
 			.filter(
 				(f) =>
 					IMAGE_EXTS.has(f.extension.toLowerCase()) &&
 					this.indexablePath(f.path) &&
-					this.images[f.path]?.mtime !== f.stat.mtime
+					!this.imageFresh(f, te?.id)
 			);
 		if (!pending.length) return;
-		const te = this.textExtractor();
 		if (!te) {
 			new Notice(
 				`Power Explorer: ${pending.length} image(s) are waiting for OCR. Install and enable "Power Extract" to make screenshots searchable.`,
@@ -5718,7 +5743,7 @@ class SearchService {
 			if (idx !== this.index) return;
 			try {
 				const text = ((await te.extractText(f)) ?? "").trim();
-				this.images[f.path] = { mtime: f.stat.mtime, text };
+				this.images[f.path] = { mtime: f.stat.mtime, text, by: te.id };
 				if (text) {
 					const embedders = rev.get(f.path) ?? [];
 					if (embedders.length) for (const n of embedders) touched.add(n);
@@ -5726,7 +5751,7 @@ class SearchService {
 				}
 			} catch (e) {
 				console.warn("Power Explorer: OCR failed for", f.path, e);
-				this.images[f.path] = { mtime: f.stat.mtime, text: "" }; // don't retry every launch
+				this.images[f.path] = { mtime: f.stat.mtime, text: "", by: te.id }; // don't retry every launch
 			}
 			done++;
 			this.dirty = true;
