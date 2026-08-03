@@ -141,6 +141,10 @@ interface PowerExplorerSettings {
 	/** Notes always open ready to type: reading view is turned back to editing,
 	 *  and the toggle that leads there is hidden. */
 	alwaysEdit: boolean;
+	/** Let Obsidian's own Settings window reopen at the size and position you
+	 *  left it. Obsidian already saves and restores this; it just never names
+	 *  the key that switches its own code on. See applySettingsWindowMemory. */
+	rememberSettingsWindow: boolean;
 	/** Put this plugin's three actions in the file explorer's toolbar instead of
 	 *  the ribbon, for anyone keeping the ribbon short. */
 	actionsInExplorerBar: boolean;
@@ -251,6 +255,7 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 	autoNotebookColors: true,
 	phoneWideNav: true,
 	alwaysEdit: false,
+	rememberSettingsWindow: true,
 	actionsInExplorerBar: false,
 	explorerBarHidden: [],
 	explorerBarCommands: [],
@@ -545,6 +550,11 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.register(() => document.body.removeClass("pe-wide-nav"));
 		document.body.toggleClass("pe-always-edit", this.settings.alwaysEdit);
 		this.register(() => document.body.removeClass("pe-always-edit"));
+		this.applySettingsWindowMemory();
+		this.register(() => {
+			const setting = (this.app as unknown as { setting?: { popoutStorageKey?: string | null } }).setting;
+			if (setting) setting.popoutStorageKey = null; // back to Obsidian's own value
+		});
 		this.register(() => document.body.removeClass("pe-own-new-folder"));
 		this.register(() => document.querySelectorAll(".pe-new-folder-btn").forEach((n) => n.remove()));
 		this.registerEvent(this.app.workspace.on("file-open", () => this.enforceEditMode()));
@@ -2321,6 +2331,33 @@ export default class PowerExplorerPlugin extends Plugin {
 		document.body.toggleClass("pe-always-edit", on);
 		void this.persistSettings();
 		this.enforceEditMode();
+	}
+
+	/** Let Obsidian's Settings window reopen where you left it.
+	 *
+	 *  None of the work is ours. The settings modal already reads its size and
+	 *  position out of local storage as it opens and writes them back as it
+	 *  closes, but both halves are guarded on `popoutStorageKey`, which 1.13.4
+	 *  initializes to null and then never assigns. Naming a key is the whole
+	 *  fix: Obsidian's own code does the rest.
+	 *
+	 *  Guarded rather than assumed, because this is not API Obsidian documents:
+	 *  a build that renames or drops the property leaves the settings window
+	 *  behaving exactly as it does today rather than throwing. It is also only
+	 *  ever consulted when Settings opens in a window of its own, so it stays
+	 *  inert for anyone who keeps Settings as a dialog inside the main window. */
+	applySettingsWindowMemory() {
+		const setting = (this.app as unknown as { setting?: { popoutStorageKey?: string | null } }).setting;
+		if (!setting) return;
+		// null is what Obsidian itself leaves here, so turning this off (or
+		// unloading the plugin) puts the app back exactly as it was
+		setting.popoutStorageKey = this.settings.rememberSettingsWindow ? "pe-settings-window" : null;
+	}
+
+	setRememberSettingsWindow(on: boolean) {
+		this.settings.rememberSettingsWindow = on;
+		void this.persistSettings();
+		this.applySettingsWindowMemory();
 	}
 
 	/** The color a folder paints with. The user's own choice always wins; a
@@ -7816,6 +7853,15 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 			help: "For anyone who treats their vault like a notebook and never reads a note read-only. Obsidian's own 'Default view for new tabs' covers only notes it opens fresh; a note reopened from a saved workspace, or one whose frontmatter asks for reading view, still lands read-only. This turns those back and takes the button off the header so it cannot be hit by accident. Nothing stops you toggling reading view from the command palette.",
 			build: (s) => {
 				s.addToggle((t) => t.setValue(this.plugin.settings.alwaysEdit).onChange((v) => this.plugin.setAlwaysEdit(v)));
+			},
+		});
+		layout.push({
+			name: "Settings window remembers its size",
+			desc: "Reopen Obsidian's Settings window at the size and position you left it, instead of the same default every time.",
+			aliases: ["settings window", "position", "popout", "geometry"],
+			help: "Obsidian already does the work: its Settings window reads a size and position as it opens and writes them back as it closes. It just never fills in the name it stores them under, so both halves sit idle and the window reopens at its default. This fills in the name. It applies only when Settings opens in a window of its own rather than as a dialog inside the main window, and turning it off (or turning this plugin off) puts Obsidian back exactly as it was. The position is saved when the Settings window closes, so quitting Obsidian with it still open may not catch the last move.",
+			build: (s) => {
+				s.addToggle((t) => t.setValue(this.plugin.settings.rememberSettingsWindow).onChange((v) => this.plugin.setRememberSettingsWindow(v)));
 			},
 		});
 		layout.push({
