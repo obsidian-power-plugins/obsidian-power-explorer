@@ -555,6 +555,9 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.applyPhoneTopActions()));
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.applyPhoneDrawerMenu()));
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.applyDrawerMenuItems()));
+		// "Open the file explorer pane, then come back here" only works if coming
+		// back re-reads the pane, and a reopened tab does not rebuild on its own
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshSettingsTab?.()));
 		this.wireDrawerMenuTapSync();
 		this.app.workspace.onLayoutReady(() => {
 			this.applyPhoneTopActions();
@@ -2412,6 +2415,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.settings.hidden = [...this.hiddenSet];
 		this.queueSave();
 		this.refreshTrees();
+		this.refreshSettingsTab?.();
 		new Notice(
 			hide
 				? `"${folder.name}" hidden. Show/hide hidden folders brings it back any time.`
@@ -2480,6 +2484,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.rankCache.clear();
 		this.queueSave();
 		this.refreshTrees();
+		this.refreshSettingsTab?.(); // the arranged and self-sorting counts just moved
 	}
 
 	/* ---------------- sections layout (folders | pages) ---------------- */
@@ -4215,6 +4220,12 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *  when their note goes away. */
 	private tplCommandIds = new Set<string>();
 	private tplCommandTimer: number | null = null;
+	/** Armed by the settings tab while it exists. Called wherever a change out
+	 *  of the tab's reach alters which rows it would draw: 1.13 renders a
+	 *  reopened tab from cached definitions, so without this a folder hidden
+	 *  from the tree, or a toolbar that only just appeared, would still be
+	 *  missing the next time settings were opened. */
+	refreshSettingsTab: (() => void) | null = null;
 
 	/** Re-sync the per-template commands when a path inside the templates folder
 	 *  appears, moves, or goes. Debounced: a folder full of templates arriving at
@@ -4226,6 +4237,7 @@ export default class PowerExplorerPlugin extends Plugin {
 		this.tplCommandTimer = window.setTimeout(() => {
 			this.tplCommandTimer = null;
 			this.syncTemplateCommands();
+			this.refreshSettingsTab?.();
 		}, 300);
 	}
 
@@ -7204,6 +7216,7 @@ type Page = { id: string; label: string; rows: Row[] };
 class PowerExplorerSettingTab extends PluginSettingTab {
 	constructor(private plugin: PowerExplorerPlugin) {
 		super(plugin.app, plugin);
+		plugin.refreshSettingsTab = () => this.refresh();
 	}
 
 	/** Kept across re-renders so a self-triggered redraw (removing a hidden folder,
@@ -7267,6 +7280,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 	 *  unhidden, a toolbar button removed. Obsidian 1.13 rebuilds the tab from
 	 *  getSettingDefinitions(); older builds have only the fallback renderer. */
 	private refresh() {
+		if (!this.containerEl.isShown()) return; // called from the plugin too
 		this.closeHelp(); // whatever the popover is anchored to is about to go
 		// update() arrived with the declarative API in 1.13 and minAppVersion is
 		// still 1.8.7, so it is reached through a cast rather than named outright:
