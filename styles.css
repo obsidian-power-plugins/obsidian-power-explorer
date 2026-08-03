@@ -546,12 +546,16 @@ body.pe-always-edit .pe-mode-toggle {
    so take the screen and let the back gesture close it (setting: Full-width
    navigation on phones).
 
-   !important because the app sizes the drawer itself, including from script:
-   a plain declaration loses to an inline width no matter how specific it is. */
-body.is-phone.pe-wide-nav .workspace-drawer.mod-left,
-body.is-phone.pe-wide-nav .workspace-drawer.mod-left .workspace-drawer-inner {
-	width: 100vw !important;
-	max-width: 100vw !important;
+   The app sizes its drawer from its own variables, so this sets those on the
+   drawer rather than overriding the declaration that reads them, and nothing
+   has to be forced past a rule that already won. The max-width goes with the
+   width or the drawer still stops at its 450px cap. Obsidian does exactly this
+   itself on screens under 380px. Set on the drawer and not on body, so the
+   right-hand drawer keeps its normal width. The inner is flex: 1 1 auto, so
+   it follows the drawer without being sized here. */
+body.is-phone.pe-wide-nav .workspace-drawer.mod-left {
+	--mobile-sidebar-width: 100vw;
+	--mobile-sidebar-max-width: 100vw;
 }
 
 /* ---------- phone drill navigation: one level at a time ----------
