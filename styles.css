@@ -531,14 +531,12 @@ body.pe-phone-top-actions .view-actions .mobile-navbar-action-tabs .clickable-ic
 }
 
 /* ---------- always editing ----------
-   Hide the header toggle that leads to reading view. Matched by its icon and
-   not its label, which is translated, and covering both faces of the toggle:
-   the plugin keeps notes in editing, so the book is the one that shows, but the
-   pencil is what it becomes for the instant before we turn it back. Every other
-   header action, and every other view's actions, are left alone. */
-body.pe-always-edit .view-action:has(.lucide-book-open),
-body.pe-always-edit .view-action:has(.lucide-book-open-text),
-body.pe-always-edit .view-action:has(.lucide-pencil) {
+   Hide the header toggle that leads to reading view. The class is painted in
+   script, on the button Obsidian names on the view itself, so this matches
+   neither its label (translated) nor its icon (which changes with the mode,
+   and whose name has already drifted between versions). Every other header
+   action, and every other view's actions, are left alone. */
+body.pe-always-edit .pe-mode-toggle {
 	display: none;
 }
 

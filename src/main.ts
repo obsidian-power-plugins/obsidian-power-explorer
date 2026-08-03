@@ -2291,10 +2291,18 @@ export default class PowerExplorerPlugin extends Plugin {
 	 * layout-change, so every route ends up in the editor.
 	 */
 	private enforceEditMode() {
-		if (!this.settings.alwaysEdit) return;
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 			const view = leaf.view;
-			if (!(view instanceof MarkdownView) || view.getMode() !== "preview") continue;
+			if (!(view instanceof MarkdownView)) continue;
+			// Mark the reading-view button on the way past, whatever the setting
+			// says: the body class decides whether the mark hides anything, so
+			// this pass never has to undo itself. Obsidian names the button on the
+			// view, so it is taken from there rather than matched by its icon,
+			// which changes with the mode, or its label, which is translated. Not
+			// public API: if a later version renames it the button just stays.
+			(view as unknown as { modeButtonEl?: HTMLElement }).modeButtonEl?.addClass("pe-mode-toggle");
+			if (!this.settings.alwaysEdit) continue;
+			if (view.getMode() !== "preview") continue;
 			const state = view.getState();
 			if (state.mode === "source") continue; // already on its way
 			state.mode = "source";
