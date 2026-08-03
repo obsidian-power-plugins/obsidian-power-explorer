@@ -2,6 +2,8 @@
 
 Drag-and-drop manual ordering for Obsidian's file explorer, built to stay fast in huge vaults. Arrange folders and notes in exactly the order you want, and the order sticks.
 
+[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" width="200">](https://buymeacoffee.com/powerplugins)
+
 ![The notebook tree on the left with colored notebooks, a section pane in the middle listing its pages, and a page group expanded to show two indented subpages](docs/images/power-explorer.png)
 
 Notebooks on the left go exactly one folder deep, and clicking a section lists
@@ -205,5 +207,3 @@ npm run deploy    # build and copy into every local vault
 Power Explorer is built and maintained by one person. If it earns a place in your
 daily vault, you can [buy me a coffee](https://buymeacoffee.com/powerplugins).
 Nothing in the plugin is held back either way.
-
-[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" width="200">](https://buymeacoffee.com/powerplugins)
