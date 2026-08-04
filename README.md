@@ -2,9 +2,9 @@
 
 Drag-and-drop manual ordering for Obsidian's file explorer, built to stay fast in huge vaults. Arrange folders and notes in exactly the order you want, and the order sticks.
 
-[![Buy me a coffee](https://cdn.buymeacoffee.com/buttons/default-yellow.png)](https://buymeacoffee.com/powerplugins)
-
 ![The notebook tree on the left with colored notebooks, a section pane in the middle listing its pages, and a page group expanded to show two indented subpages](docs/images/power-explorer.png)
+
+[![Buy me a coffee](docs/images/buy-me-a-coffee.png)](https://buymeacoffee.com/powerplugins)
 
 Notebooks on the left go exactly one folder deep, and clicking a section lists
 its pages beside it. **Bramble bed** is a page group: a folder and a note of the
