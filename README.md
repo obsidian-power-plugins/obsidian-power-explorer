@@ -197,6 +197,17 @@ Imported notebooks are also where page groups come from: the folder-note pattern
 - The manual order is stored in the plugin's settings and syncs with your vault when community plugin folders sync (Obsidian Sync's "Installed community plugins", or any file-level sync).
 - Ordering internals are feature-detected: if a future Obsidian version changes them, the explorer falls back to its default sort rather than breaking.
 
+## What the catalog's scan reports
+
+The community catalog scans a plugin for what it is *capable* of, which is not the same as what it does with it. Power Explorer reports two things.
+
+| What the scan reports | What it is | Where |
+| --- | --- | --- |
+| **Vault enumeration** | Listing your files, which is what a file explorer is. Search builds and reconciles its index from it (including finding images still waiting to be read), the template pickers offer the notes in your templates folder, and the performance report counts what is there. Only paths, extensions, and modification times are looked at, and nothing leaves Obsidian. | [`src/main.ts`](src/main.ts) `templateNotes`, the search index |
+| **Clipboard access** | Writing, never reading. One line: the performance report, as JSON, when you run the command that produces it. | [`src/main.ts`](src/main.ts), the performance report command |
+
+Power Explorer makes no network requests of any kind: there is no `requestUrl`, no `fetch`, and no `XMLHttpRequest` anywhere in it. It starts no processes and reads no files outside your vault. There is no `eval`, no `Function` constructor, and no `innerHTML`; the one place that would reach for it builds its markup through `createSvg` instead.
+
 ## Build from source
 
 ```
