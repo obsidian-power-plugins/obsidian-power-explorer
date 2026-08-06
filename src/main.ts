@@ -2454,8 +2454,8 @@ export default class PowerExplorerPlugin extends Plugin {
 		const current: SortMode = this.settings.folderSort[folder.path] ?? "manual";
 		const modes: [SortMode, string, string][] = [
 			["manual", "Manual (drag to arrange)", "move"],
-			["az", "Name (A to Z)", "arrow-down-a-z"],
-			["za", "Name (Z to A)", "arrow-down-z-a"],
+			["az", "Name (A to Z)", "arrow-down-az"],
+			["za", "Name (Z to A)", "arrow-down-za"],
 		];
 		for (const [mode, label, icon] of modes) {
 			menu.addItem((item) =>
