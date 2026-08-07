@@ -1,7 +1,7 @@
 {
 	"id": "powerexplorer",
 	"name": "Power Explorer",
-	"version": "1.36.10",
+	"version": "1.36.11",
 	"minAppVersion": "1.8.7",
 	"description": "Arrange files and folders by hand with drag-and-drop, and search the whole vault instantly by word prefix. Built to stay fast in huge vaults.",
 	"author": "Power Plugins",
