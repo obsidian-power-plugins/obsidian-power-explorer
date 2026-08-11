@@ -555,3 +555,21 @@ export function rangeSelect(order: string[], anchor: string, target: string): st
 	const [lo, hi] = a <= b ? [a, b] : [b, a];
 	return order.slice(lo, hi + 1);
 }
+
+/**
+ * Files the explorer lists because you open them: notes, canvases, and Bases.
+ * Anything else living in a folder is a file filed WITH those pages, a PDF, a
+ * scan, a spreadsheet, and it is the page that gets opened, not the paper.
+ *
+ * Keeping a note's own documents beside it means the folder that used to hold
+ * six pages now holds six pages and nine attachments, and the list stops
+ * reading as a list of pages. This is what the hide setting filters on.
+ */
+const PAGE_EXTS = new Set(["md", "canvas", "base"]);
+
+/** True when this file name is an attachment rather than a page. A name with
+ *  no extension at all counts as one: it is not a note either way. */
+export function isAttachmentName(name: string): boolean {
+	const at = name.lastIndexOf(".");
+	return !PAGE_EXTS.has(at > 0 ? name.slice(at + 1).toLowerCase() : "");
+}

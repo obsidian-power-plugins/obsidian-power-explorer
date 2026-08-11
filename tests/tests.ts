@@ -12,6 +12,7 @@ import {
 	drillDirection,
 	insertOrder,
 	insertOrderMany,
+	isAttachmentName,
 	joinPath,
 	nameOf,
 	dropSection,
@@ -936,11 +937,19 @@ eq(isUnder("a/b", "a/b"), true, "a path is under itself");
 	eq(templateRank(["Acme/Meet"], "Acme/Meetings"), 0, "a partial name is not a parent folder");
 }
 
-if (failures) {
-	console.error(`\n${failures} test(s) FAILED.`);
-	process.exit(1);
+// --- pages versus the files filed beside them ---
+{
+	eq(isAttachmentName("Stijn Hendrikse.md"), false, "a note is a page");
+	eq(isAttachmentName("Board.canvas"), false, "so is a canvas");
+	eq(isAttachmentName("Customers.base"), false, "and so is a Base");
+	eq(isAttachmentName("Notes.MD"), false, "the extension is read whatever its case");
+	eq(isAttachmentName("30-60-90.pdf"), true, "a PDF is an attachment");
+	eq(isAttachmentName("shot.png"), true, "so is an image");
+	eq(isAttachmentName("Rates.xlsx"), true, "and a spreadsheet");
+	eq(isAttachmentName("LICENSE"), true, "a file with no extension is not a note either way");
+	eq(isAttachmentName("Meeting notes 2026.05.12.md"), false, "only the last dot decides");
+	eq(isAttachmentName("Diagram.excalidraw.md"), false, "an Excalidraw drawing is a note and stays");
 }
-console.log("\nAll tests passed.");
 
 // --- the deploy guard ---
 // Two sessions building this plugin at once is enough for the second to
@@ -971,3 +980,11 @@ console.log("\nAll tests passed.");
 	eq(versionFromManifest('{"version":"1.2.3"}'), "1.2.3", "otherwise the version is read off it");
 	eq(versionFromManifest('{"version":"  "}'), null, "a blank version is no version");
 }
+
+// The summary runs last on purpose: a test added below it would print FAILED
+// without failing the build.
+if (failures) {
+	console.error(`\n${failures} test(s) FAILED.`);
+	process.exit(1);
+}
+console.log("\nAll tests passed.");
