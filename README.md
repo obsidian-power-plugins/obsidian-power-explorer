@@ -110,9 +110,15 @@ Matches cover titles, aliases, headings, body text, tags, and folder names. The 
 
 The pages pane's filter box searches inside notes too, scoped to the section you are looking at.
 
+## Hiding what you do not want to look at
+
+Right-click any folder to hide it from the tree. **Hide attachments** does the same for PDFs, images, and documents, which matters if you file a note's own papers beside the note: the folder holding six pages and nine PDFs reads as six pages again. Notes, canvases, and Bases always stay, and the files themselves never move.
+
+Neither is a one-way door. The eye button in the pages pane shows everything again for as long as you need it, and tucks it back when you are done.
+
 ## Settings
 
-Drag to reorder (with a command for the hotkey), where unarranged items go, clear all stored orders, the search index and modal, PDF text, image text, and folders search should skip.
+Drag to reorder (with a command for the hotkey), where unarranged items go, hiding attachments, clear all stored orders, the search index and modal, PDF text, image text, and folders search should skip.
 
 ## Coming from another notebook app
 
