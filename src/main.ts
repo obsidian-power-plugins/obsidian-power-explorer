@@ -44,6 +44,7 @@ import {
 	overlayDeviceState,
 	pickDeviceKeys,
 	withoutDeviceKeys,
+	isAttachmentName,
 	isUnder,
 	nameOf,
 	pairPages,
@@ -115,6 +116,10 @@ interface PowerExplorerSettings {
 	lastSection: string | null;
 	/** Folder paths hidden from the tree until temporarily shown. */
 	hidden: string[];
+	/** Keep attachments out of the tree and the pages list, so a folder holding
+	 *  a note's own PDFs and scans still reads as a list of pages. The same eye
+	 *  button that reveals hidden folders brings them back. */
+	hideAttachments: boolean;
 	/** Page groups you have shut, by folder path. Stored as the exceptions
 	 *  because groups start open: a vault that has never been touched carries
 	 *  nothing, and a new group arrives expanded like every other one. */
@@ -246,6 +251,7 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 	sectionWidth: 240,
 	lastSection: null,
 	hidden: [],
+	hideAttachments: false,
 	collapsedGroups: [],
 	expandedNbs: [],
 	colors: {},
@@ -1315,10 +1321,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			// The replacement is an own property of this one view, so the receiver
 			// is always that view and the original can be called on it by name.
 			view.getSortedFolderItems = (folder: TFolder) => {
-				let items: { file?: TAbstractFile }[] = orig.call(view, folder);
-				if (this.hiddenSet.size && !this.showHidden) {
-					items = items.filter((it) => !(it.file instanceof TFolder) || !this.hiddenSet.has(it.file.path));
-				}
+				const items: { file?: TAbstractFile }[] = orig.call(view, folder).filter((it) => this.showsInTree(it.file));
 				return this.orderItems(folder, items);
 			};
 			this.register(() => {
@@ -2183,12 +2186,25 @@ export default class PowerExplorerPlugin extends Plugin {
 				(f) => f instanceof TFolder,
 				(f) => (f instanceof TFile ? f.stat : null)
 			).map((c) => ({ file: c }));
-		if (this.hiddenSet.size && !this.showHidden) {
-			items = items.filter((it) => !(it.file instanceof TFolder) || !this.hiddenSet.has(it.file.path));
-		}
-		return this.orderItems(folder, items)
+		return this.orderItems(folder, items.filter((it) => this.showsInTree(it.file)))
 			.map((it) => it.file)
 			.filter((f): f is TAbstractFile => f != null);
+	}
+
+	/**
+	 * Whether a row belongs in the tree and the pages list right now: hidden
+	 * folders are out, and so are attachments while that setting is on.
+	 *
+	 * Both are lifted by the same session-only peek, since both answer the same
+	 * question, "show me what is really in here". The ordering ranks are read
+	 * from the UNFILTERED list elsewhere (see visibleNames), so nothing that is
+	 * merely out of sight loses its place while it is away.
+	 */
+	private showsInTree(f: TAbstractFile | undefined): boolean {
+		if (this.showHidden) return true;
+		if (f instanceof TFolder) return !this.hiddenSet.has(f.path);
+		if (f instanceof TFile) return !this.settings.hideAttachments || !isAttachmentName(f.name);
+		return true;
 	}
 
 	/** The explorer's chosen sort order, read from its view state (present on
@@ -2551,17 +2567,17 @@ export default class PowerExplorerPlugin extends Plugin {
 	}
 
 	toggleHidden() {
-		if (!this.liveHiddenCount() && !this.showHidden) {
-			new Notice("Power Explorer: no folders are hidden. Right-click a folder and choose Hide folder.");
+		const folders = this.liveHiddenCount();
+		const files = this.settings.hideAttachments;
+		if (!folders && !files && !this.showHidden) {
+			new Notice("Power Explorer: nothing is hidden. Right-click a folder and choose Hide folder.");
 			return;
 		}
 		this.showHidden = !this.showHidden;
 		this.refreshTrees();
-		new Notice(
-			this.showHidden
-				? `Showing ${this.liveHiddenCount()} hidden folder(s) until toggled off (this session only).`
-				: "Hidden folders are tucked away again."
-		);
+		// the peek covers both kinds, so the message names whichever are in play
+		const what = [folders ? `${folders} hidden folder(s)` : "", files ? "attachments" : ""].filter(Boolean).join(" and ");
+		new Notice(this.showHidden ? `Showing ${what} until toggled off (this session only).` : "Hidden items are tucked away again.");
 	}
 
 	/** How many hidden folders STILL EXIST. A folder renamed or moved without our
@@ -3499,10 +3515,13 @@ export default class PowerExplorerPlugin extends Plugin {
 			this.renderPages();
 		}, this.filterOpen);
 		const liveHidden = this.liveHiddenCount();
-		if (liveHidden || this.showHidden) {
+		if (liveHidden || this.settings.hideAttachments || this.showHidden) {
+			const what = [liveHidden ? `${liveHidden} hidden folder(s)` : "", this.settings.hideAttachments ? "attachments" : ""]
+				.filter(Boolean)
+				.join(" and ");
 			headBtn(
 				this.showHidden ? "eye-off" : "eye",
-				this.showHidden ? "Tuck hidden folders away" : `Show ${liveHidden} hidden folder(s)`,
+				this.showHidden ? "Tuck hidden items away" : `Show ${what}`,
 				() => this.toggleHidden(),
 				this.showHidden
 			);
@@ -7988,6 +8007,19 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 				s.addToggle((t) =>
 					t.setValue(this.plugin.settings.autoNotebookColors).onChange((v) => {
 						this.plugin.settings.autoNotebookColors = v;
+						this.plugin.orderChanged(); // saves, then repaints the trees and pages
+					})
+				);
+			},
+		});
+		layout.push({
+			name: "Hide attachments",
+			desc: "Keep PDFs, images, and documents out of the tree and the pages list, leaving the pages you actually open. The files stay exactly where they are.",
+			help: "For vaults that file a note's own documents beside it rather than in one attachment folder: the folder holding six pages and nine PDFs reads as six pages again. Notes, canvases, and Bases always stay. The eye button in the pages pane shows everything again for as long as you need it.",
+			build: (s) => {
+				s.addToggle((t) =>
+					t.setValue(this.plugin.settings.hideAttachments).onChange((v) => {
+						this.plugin.settings.hideAttachments = v;
 						this.plugin.orderChanged(); // saves, then repaints the trees and pages
 					})
 				);
