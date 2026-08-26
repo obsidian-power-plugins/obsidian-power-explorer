@@ -483,6 +483,7 @@ export default class PowerExplorerPlugin extends Plugin {
 	private showHidden = false;
 	private origSort = new WeakMap<object, (folder: TFolder) => { file?: TAbstractFile }[]>();
 	private refreshTimer: number | null = null;
+	private settingsRepaintTimer: number | null = null;
 	/** One generated stylesheet paints every section color: zero per-item work. */
 	private colorSheet: CSSStyleSheet | null = null;
 	/** Pages pane interaction state; reset when the section changes. */
@@ -1077,7 +1078,9 @@ export default class PowerExplorerPlugin extends Plugin {
 		if (this.drag) this.cancelDrag();
 		this.removeSections();
 		this.search?.flushPersist();
+		this.search?.shutdown();
 		if (this.refreshTimer != null) window.clearTimeout(this.refreshTimer);
+		if (this.settingsRepaintTimer != null) window.clearTimeout(this.settingsRepaintTimer);
 		if (this.saveTimer != null) {
 			window.clearTimeout(this.saveTimer);
 			void this.persistSettings();
@@ -1248,6 +1251,18 @@ export default class PowerExplorerPlugin extends Plugin {
 	 *  replaced under the UI (an external edit adopted, or a failed boot read
 	 *  finally making good). */
 	private repaintFromSettings() {
+		// A synced data.json can land in the middle of a large phone catch-up.
+		// Adopt it immediately, but rebuild the explorer chrome once after the
+		// burst instead of tearing down and recreating the navigator mid-tap.
+		if (Platform.isMobileApp && this.mobileSyncSettling()) {
+			if (this.settingsRepaintTimer == null) {
+				this.settingsRepaintTimer = window.setTimeout(() => {
+					this.settingsRepaintTimer = null;
+					this.repaintFromSettings();
+				}, 750);
+			}
+			return;
+		}
 		this.rankCache.clear();
 		this.hiddenSet = new Set(this.settings.hidden);
 		this.applyColorStyles();
@@ -1297,8 +1312,27 @@ export default class PowerExplorerPlugin extends Plugin {
 		if (this.refreshTimer != null) return;
 		this.refreshTimer = window.setTimeout(() => {
 			this.refreshTimer = null;
+			// Power Connect applies every downloaded file through the Vault API so
+			// Obsidian's index stays correct. During a phone catch-up that can be
+			// hundreds of events; keep the current pane stable and repaint once at
+			// the trailing edge instead of once every 250 ms.
+			if (Platform.isMobileApp && this.mobileSyncSettling()) {
+				this.queuePagesRefresh();
+				return;
+			}
 			if (this.pagesEl) this.renderPages();
-		}, 250);
+		}, Platform.isMobileApp ? 500 : 250);
+	}
+
+	/** Shared, read-only startup signal from Power Connect. Kept structural so
+	 *  Explorer remains independent when Connect is not installed. */
+	mobileSyncSettling(): boolean {
+		const pc = (
+			this.app as unknown as {
+				plugins?: { plugins?: Record<string, { running?: boolean; mobileStartupPending?: boolean }> };
+			}
+		).plugins?.plugins?.powerconnect;
+		return pc?.running === true || pc?.mobileStartupPending === true;
 	}
 
 	/* ---------------- sorting ---------------- */
@@ -5346,6 +5380,8 @@ class SearchService {
 	private dirty = false;
 	/** Parsed "Folders search skips", recomputed only when the setting changes. */
 	private exCache: { src: string; roots: string[] } | null = null;
+	private waitedForMobileCatchup = false;
+	private startGeneration = 0;
 
 	constructor(private plugin: PowerExplorerPlugin) {}
 
@@ -5389,6 +5425,21 @@ class SearchService {
 	/** Load the persisted store, then reconcile against the live vault. */
 	async start() {
 		if (!this.plugin.settings.searchEnabled) return;
+		const generation = ++this.startGeneration;
+		// Parsing and reconciling a large persisted index is deliberately not on
+		// the iPhone's critical launch path. It also waits for the startup sync,
+		// otherwise every file just downloaded is indexed once before and once
+		// after catch-up. The existing local pages remain usable meanwhile.
+		if (Platform.isMobileApp && !this.waitedForMobileCatchup) {
+			this.waitedForMobileCatchup = true;
+			const started = Date.now();
+			while (generation === this.startGeneration && this.plugin.mobileSyncSettling() && Date.now() - started < 30 * 60_000) {
+				await new Promise<void>((resolve) => window.setTimeout(resolve, 750));
+			}
+			if (generation !== this.startGeneration) return;
+			await new Promise<void>((resolve) => window.setTimeout(resolve, 750));
+		}
+		if (generation !== this.startGeneration) return;
 		try {
 			const raw = await this.app.vault.adapter.read(this.storePath());
 			const data = JSON.parse(raw) as {
@@ -5403,6 +5454,7 @@ class SearchService {
 		} catch {
 			/* first run, or an unreadable cache: rebuild from the vault */
 		}
+		if (generation !== this.startGeneration) return;
 		await this.build();
 	}
 
@@ -5416,6 +5468,8 @@ class SearchService {
 
 	/** Turn search off: drop everything and remove the cache file. */
 	stop() {
+		this.startGeneration++;
+		this.waitedForMobileCatchup = false;
 		this.index = new VaultIndex();
 		this.store = {};
 		this.images = {};
@@ -5428,6 +5482,16 @@ class SearchService {
 			this.persistTimer = null;
 		}
 		this.app.vault.adapter.remove(this.storePath()).catch(() => {});
+	}
+
+	/** Cancel deferred startup/build work without deleting the persisted cache. */
+	shutdown() {
+		this.startGeneration++;
+		this.index = new VaultIndex();
+		if (this.persistTimer != null) {
+			window.clearTimeout(this.persistTimer);
+			this.persistTimer = null;
+		}
 	}
 
 	private async build() {
