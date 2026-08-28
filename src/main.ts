@@ -1,4 +1,14 @@
-import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, type SettingDefinitionItem, type SettingDefinitionPage, type SettingDefinitionRender, TAbstractFile, TFile, TFolder, type WorkspaceLeaf, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
+import { App, CachedMetadata, Component, FuzzySuggestModal, MarkdownRenderer, MarkdownView, Menu, MenuItem, Modal, Notice as ObsidianNotice, Platform, Plugin, PluginSettingTab, Setting, type SettingDefinitionItem, type SettingDefinitionPage, type SettingDefinitionRender, TAbstractFile, TFile, TFolder, type WorkspaceLeaf, apiVersion, getAllTags, getIconIds, loadPdfJs, setIcon } from "obsidian";
+
+let pluginNoticesEnabled = () => true;
+
+class Notice extends ObsidianNotice {
+	constructor(message: string | DocumentFragment, duration?: number) {
+		super(message, duration);
+		if (!pluginNoticesEnabled()) this.hide();
+	}
+}
+
 import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
 import { Chunk, ChunkKind, MAX_CHUNK, SearchHit, VaultIndex, chunkNote, editorMatchRanges, persistOverdue } from "./search";
@@ -226,6 +236,7 @@ interface PowerExplorerSettings {
 	launcherOrder: Record<string, string[]>;
 	/** The one-time welcome hint has been shown. */
 	welcomed: boolean;
+	showNotifications: boolean;
 }
 
 /** Settings as they may still be found on disk: the two keys that predate the
@@ -290,6 +301,7 @@ const DEFAULT_SETTINGS: PowerExplorerSettings = {
 	launcherFavorites: [],
 	launcherOrder: {},
 	welcomed: false,
+	showNotifications: true,
 };
 
 /** Image types the OCR pipeline covers, which has to be what a provider below
@@ -539,6 +551,7 @@ export default class PowerExplorerPlugin extends Plugin {
 			);
 		}
 		this.adoptSettings(this.withDevice(Object.assign({}, DEFAULT_SETTINGS, raw)));
+		pluginNoticesEnabled = () => this.settings.showNotifications;
 		this.baseline = structuredClone(this.settings);
 		// the two pre-0.9.5 booleans became the desktopPane choice
 		if (raw && raw.desktopPane === undefined) {
@@ -7703,6 +7716,21 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 	 *  render because several sections list live state (the buttons actually in
 	 *  the toolbar, the folders you have hidden, the templates you have written). */
 	private buildPages(): Page[] {
+		const general: Row[] = [
+			{
+				name: "Show notifications",
+				desc: "Show popup notices from Power Explorer. Turn off to keep Obsidian clear, especially on phones.",
+				help: "When off, Power Explorer suppresses every popup notice, including progress, success, warning, and error notices.",
+				build: (s) => {
+					s.addToggle((t) =>
+						t.setValue(this.plugin.settings.showNotifications).onChange((v) => {
+							this.plugin.settings.showNotifications = v;
+							void this.plugin.persistSettings();
+						})
+					);
+				},
+			},
+		];
 		const layout: Row[] = [];
 		const ordering: Row[] = [];
 		const templates: Row[] = [];
@@ -8399,6 +8427,7 @@ class PowerExplorerSettingTab extends PluginSettingTab {
 		});
 
 		return [
+			{ id: "general", label: "General", rows: general },
 			{ id: "layout", label: "Layout", rows: layout },
 			{ id: "ordering", label: "Ordering", rows: ordering },
 			{ id: "templates", label: "Templates", rows: templates },
